@@ -1,6 +1,6 @@
-# SomityHub deployment and Android release
+# SomityHub deployment and Android preview
 
-## Web deployment (Vercel)
+## Web deployment
 
 The repository is configured for the Next.js framework through `vercel.json`.
 
@@ -19,29 +19,26 @@ The GitHub Actions workflow `.github/workflows/web-ci.yml` verifies that depende
 
 **Free-plan restriction:** Vercel Hobby is limited to personal, non-commercial use. SomityHub is intended for cooperative/committee operations, so confirm that the intended use qualifies before using Hobby. Do not upgrade or add billing without the owner's explicit approval.
 
-## Android APK version releases
+## Android APK preview after every push
 
-The workflow `.github/workflows/android-release.yml` is prepared to build three ABI-specific APKs and attach them to a GitHub Release when a semantic version tag is pushed, for example `v1.0.0`.
+The workflow `.github/workflows/android-release.yml` runs on every push to `main` and on version tags. It:
 
-Expected Flutter project location: `apps/mobile/` (must contain `pubspec.yaml` and the Android Gradle project). The current repository contains the Next.js web application only; the Flutter mobile application has not yet been added. Therefore the APK workflow intentionally stops with a clear preflight error until that app exists.
+1. Generates the Android platform project in the temporary GitHub Actions runner.
+2. Installs Flutter dependencies.
+3. Runs `flutter analyze` and `flutter test`.
+4. Checks the repository Actions Variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.
+5. Builds installable APKs for `armeabi-v7a`, `arm64-v8a`, and `x86_64`.
+6. Uploads the APKs as a downloadable workflow artifact, retained for 30 days.
 
-After the Flutter app is added and tested:
+To get the latest preview: open **GitHub → Actions → Android APK Preview and Release → latest successful run → Artifacts**. Download and extract the artifact ZIP. Most modern Android phones use the `arm64-v8a` APK.
 
-1. Update the Flutter app version in `apps/mobile/pubspec.yaml` (for example `version: 1.0.0+1`).
-2. Push the app code to `main`.
-3. Create and push a version tag, for example:
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-4. GitHub Actions builds APKs for `armeabi-v7a`, `arm64-v8a`, and `x86_64`.
-5. The workflow creates a GitHub Release for the tag and attaches the versioned APK files. Older releases and APKs remain available under **Releases**.
+A version tag such as `v1.0.0` also creates a GitHub Release with the APK files attached. Main-branch previews are not GitHub Releases; they are downloadable from the workflow run's Artifacts section.
 
-The workflow currently uses the Flutter Android project's default release signing configuration. Before public production distribution, configure a private upload/release keystore and the matching Gradle signing setup. Keep keystore files and passwords in GitHub Actions Secrets only; never commit them or send them in chat.
+The current preview build uses the generated Android project's default debug signing configuration. It is suitable for testing, not production distribution. Production release signing needs a private keystore stored only in GitHub Actions Secrets.
 
-## Current limitations
+## Free-plan and security notes
 
-- No APK can be built until the Flutter mobile source project exists.
-- No Vercel project has been imported and no environment variables have been entered by this repository change.
-- GitHub Actions workflows must run successfully before either build process can be considered verified.
-- The repository is public; do not store credentials or private signing materials in it.
+- The repository is public, so standard GitHub-hosted runner usage for public repositories is free under GitHub's current Actions policy; artifact availability and retention remain subject to GitHub limits and policies.
+- The Android workflow does not require paid Supabase features.
+- The Android app uses only the Supabase publishable/anon key. Never store a service-role key, database password, or private signing key in source code or repository variables.
+- No deployment or APK build is considered successful until the corresponding GitHub Actions run completes successfully.
