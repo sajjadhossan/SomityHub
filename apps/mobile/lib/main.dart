@@ -424,7 +424,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              Text('সদস্য তালিকা লোড করা যায়নি: $' + '{snapshot.error}'),
+              Text('সদস্য তালিকা লোড করা যায়নি: ' + snapshot.error.toString()),
               const SizedBox(height: 8),
               const Text('আপনার committee manager permission এবং Membership SELECT policy যাচাই করুন।'),
             ],
