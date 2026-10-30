@@ -1,11 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type Mode = "login" | "signup";
 
 export default function HomePage() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -64,7 +66,7 @@ export default function HomePage() {
           password
         });
         if (authError) throw authError;
-        setMessage("Login সফল হয়েছে।");
+        router.push("/committees");
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "একটি অপ্রত্যাশিত সমস্যা হয়েছে।");
