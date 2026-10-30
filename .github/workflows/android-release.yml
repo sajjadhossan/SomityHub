@@ -75,6 +75,37 @@ jobs:
         run: |
           flutter create --platforms=android --org com.somityhub --project-name app .
           sed -i 's/android:label="app"/android:label="SomityHub"/' android/app/src/main/AndroidManifest.xml
+      - name: Ensure Android Internet permission
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text(encoding="utf-8")
+          permission = 'android.permission.INTERNET'
+
+          if permission not in content:
+              marker = "<manifest"
+              start = content.find(marker)
+              if start < 0:
+                  raise SystemExit("AndroidManifest.xml has no <manifest> root element.")
+              end = content.find(">", start)
+              if end < 0:
+                  raise SystemExit("AndroidManifest.xml has an invalid <manifest> root element.")
+              content = (
+                  content[:end + 1]
+                  + '\n    <uses-permission android:name="android.permission.INTERNET" />'
+                  + content[end + 1:]
+              )
+              manifest.write_text(content, encoding="utf-8")
+
+          check = manifest.read_text(encoding="utf-8")
+          if permission not in check:
+              raise SystemExit("INTERNET permission was not added.")
+          print("Verified: Android INTERNET permission is present.")
+          PY
 
       - name: Install Flutter dependencies
         working-directory: apps/mobile
