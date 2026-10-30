@@ -1,26 +1,27 @@
-name: Android APK Release
+name: Android APK Preview and Release
 
 on:
   push:
+    branches: [main]
     tags:
       - "v*.*.*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example 1.0.0 (without v)"
-        required: true
+        description: "Optional version (for example 1.0.0). Leave blank for an automatic preview version."
+        required: false
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: android-apk-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build-apk:
-    name: Build Android APKs
+    name: Test and build Android APKs
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -29,19 +30,27 @@ jobs:
 
       - name: Check Flutter app exists
         run: |
-          if [ ! -f "apps/mobile/pubspec.yaml" ]; then
-            echo "::error::Flutter mobile app pubspec.yaml is missing."
+          test -f "apps/mobile/pubspec.yaml" || {
+            echo "::error::Flutter app is missing: apps/mobile/pubspec.yaml"
             exit 1
-          fi
+          }
+          test -f "apps/mobile/lib/main.dart" || {
+            echo "::error::Flutter entry point is missing: apps/mobile/lib/main.dart"
+            exit 1
+          }
 
-      - name: Resolve release version
+      - name: Resolve build version
         id: version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
           else
-            VERSION="${{ inputs.version }}"
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
           fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Version must follow semantic version format, for example 1.0.0"
@@ -71,15 +80,29 @@ jobs:
         working-directory: apps/mobile
         run: flutter pub get
 
+      - name: Analyze Dart code
+        working-directory: apps/mobile
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        working-directory: apps/mobile
+        run: flutter test
+
       - name: Verify Supabase build variables
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          test -n "$SUPABASE_URL" || { echo "::error::Add repository Actions Variable SUPABASE_URL."; exit 1; }
-          test -n "$SUPABASE_PUBLISHABLE_KEY" || { echo "::error::Add repository Actions Variable SUPABASE_PUBLISHABLE_KEY."; exit 1; }
+          test -n "$SUPABASE_URL" || {
+            echo "::error::Add Actions Variable SUPABASE_URL."
+            exit 1
+          }
+          test -n "$SUPABASE_PUBLISHABLE_KEY" || {
+            echo "::error::Add Actions Variable SUPABASE_PUBLISHABLE_KEY."
+            exit 1
+          }
 
-      - name: Build split release APKs
+      - name: Build installable Android APKs
         working-directory: apps/mobile
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
@@ -91,26 +114,30 @@ jobs:
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
-      - name: Rename APKs with version
+      - name: Prepare versioned APK files
         shell: bash
         run: |
           mkdir -p release-apks
           for apk in apps/mobile/build/app/outputs/flutter-apk/*-release.apk; do
             [ -f "$apk" ] || continue
-            filename="$(basename "$apk" -release.apk)"
-            cp "$apk" "release-apks/SomityHub-${{ steps.version.outputs.version }}-${filename#app-}.apk"
+            abi="$(basename "$apk" | sed 's/^app-//; s/-release\.apk$//')"
+            cp "$apk" "release-apks/SomityHub-${{ steps.version.outputs.version }}-$abi.apk"
           done
+          test -n "$(find release-apks -maxdepth 1 -name '*.apk' -print -quit)" || {
+            echo "::error::No APK files were produced."
+            exit 1
+          }
           ls -lh release-apks
 
-      - name: Upload APKs to workflow run
+      - name: Upload APKs for preview
         uses: actions/upload-artifact@v4
         with:
-          name: SomityHub-Android-${{ steps.version.outputs.version }}
+          name: SomityHub-APK-preview-${{ steps.version.outputs.version }}-run-${{ github.run_number }}
           path: release-apks/*.apk
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30
 
-      - name: Publish GitHub Release and attach APKs
+      - name: Publish tagged GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
