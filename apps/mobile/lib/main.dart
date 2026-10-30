@@ -237,14 +237,18 @@ class _CommitteePageState extends State<CommitteePage> {
     body: RefreshIndicator(onRefresh: () async => _refresh(),
       child: FutureBuilder<List<Map<String, dynamic>>>(future: _committees, builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError) return ListView(padding: const EdgeInsets.all(24),
-          children: [Text('সমিতির তালিকা লোড করা যায়নি: ${snapshot.error}')]);
+        if (snapshot.hasError) {
+          return ListView(padding: const EdgeInsets.all(24),
+            children: [Text('সমিতির তালিকা লোড করা যায়নি: ${snapshot.error}')]);
+        }
         final items = snapshot.data ?? [];
-        if (items.isEmpty) return ListView(padding: const EdgeInsets.all(24), children: const [
-          SizedBox(height: 90), Icon(Icons.groups_outlined, size: 64, color: Colors.grey),
-          SizedBox(height: 16), Text('এখনো কোনো সমিতি নেই', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          SizedBox(height: 8), Text('নতুন সমিতি তৈরি করতে নিচের + বাটন ব্যবহার করুন।', textAlign: TextAlign.center),
-        ]);
+        if (items.isEmpty) {
+          return ListView(padding: const EdgeInsets.all(24), children: const [
+            SizedBox(height: 90), Icon(Icons.groups_outlined, size: 64, color: Colors.grey),
+            SizedBox(height: 16), Text('এখনো কোনো সমিতি নেই', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8), Text('নতুন সমিতি তৈরি করতে নিচের + বাটন ব্যবহার করুন।', textAlign: TextAlign.center),
+          ]);
+        }
         return ListView.separated(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           itemCount: items.length, separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
