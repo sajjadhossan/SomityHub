@@ -352,7 +352,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 decoration: const InputDecoration(labelText: 'পূর্ণ নাম')),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _language,
+                initialValue: _language,
                 decoration: const InputDecoration(labelText: 'Interface Language'),
                 items: const [
                   DropdownMenuItem(value: 'bn', child: Text('বাংলা')),
