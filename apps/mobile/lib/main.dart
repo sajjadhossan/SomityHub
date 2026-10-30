@@ -99,7 +99,7 @@ class _LoginPageState extends State<LoginPage> {
         await auth.signInWithPassword(email: _email.text.trim(), password: _password.text);
       }
     } on AuthException catch (e) {
-      if (mounted) { setState(() => _error = e.message); }
+      if (mounted) { setState(() => _error = e.toString()); }
     } catch (e) {
       if (mounted) { setState(() => _error = 'Request failed: $e'); }
     } finally {
@@ -114,7 +114,7 @@ class _LoginPageState extends State<LoginPage> {
       await Supabase.instance.client.auth.resetPasswordForEmail(_email.text.trim());
       if (mounted) { setState(() => _message = 'Email address registered থাকলে password reset link পাঠানো হয়েছে।'); }
     } on AuthException catch (e) {
-      if (mounted) { setState(() => _error = e.message); }
+      if (mounted) { setState(() => _error = e.toString()); }
     } finally {
       if (mounted) { setState(() => _busy = false); }
     }
@@ -219,8 +219,8 @@ class _CommitteePageState extends State<CommitteePage> {
       final code = row is Map ? row['owner_member_code'] : null;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
         code == null ? 'সমিতি তৈরি হয়েছে।' : 'সমিতি তৈরি হয়েছে। আপনার Admin Member Code: $code')));
-    } on PostgrestException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতি তৈরি করা যায়নি: ${e.message}')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতি তৈরি করা যায়নি: ${e.toString()}')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতি তৈরি করা যায়নি: $e')));
     }
@@ -328,8 +328,8 @@ class _ProfilePageState extends State<ProfilePage> {
         'preferred_language': _language,
       }).eq('id', user.id);
       if (mounted) setState(() => _message = 'Profile সফলভাবে আপডেট হয়েছে।');
-    } on PostgrestException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
     } catch (e) {
       if (mounted) setState(() => _error = 'Profile update করা যায়নি: $e');
     } finally {
@@ -380,69 +380,6 @@ class _ProfilePageState extends State<ProfilePage> {
         ])),
   );
 }
-), '');
-    // Keep the original committee name (including Bangla) unchanged in the
-    // database. The slug is only an ASCII identifier; Bangla-only names get
-    // a generated unique fallback instead of being rejected.
-    final slug = asciiSlug.length >= 3
-        ? asciiSlug
-        : 'committee-${DateTime.now().microsecondsSinceEpoch}';
-    try {
-      final result = await Supabase.instance.client.rpc('create_committee',
-        params: {'p_name': name, 'p_slug': slug});
-      _refresh();
-      if (!mounted) return;
-      final row = result is List && result.isNotEmpty ? result.first : result;
-      final code = row is Map ? row['owner_member_code'] : null;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        code == null ? 'সমিতি তৈরি হয়েছে।' : 'সমিতি তৈরি হয়েছে। আপনার Admin Member Code: $code')));
-    } on PostgrestException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতি তৈরি করা যায়নি: ${e.message}')));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতি তৈরি করা যায়নি: $e')));
-    }
-  }
-
-  Future<void> _signOut() async => Supabase.instance.client.auth.signOut();
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('SomityHub'), actions: [
-      IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
-      IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => const ProfilePage())), icon: const Icon(Icons.person_outline), tooltip: 'আমার Profile'),
-      IconButton(onPressed: _signOut, icon: const Icon(Icons.logout), tooltip: 'Logout'),
-    ]),
-    floatingActionButton: FloatingActionButton.extended(onPressed: _createCommittee,
-      icon: const Icon(Icons.add), label: const Text('নতুন সমিতি')),
-    body: RefreshIndicator(onRefresh: () async => _refresh(),
-      child: FutureBuilder<List<Map<String, dynamic>>>(future: _committees, builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError) {
-          return ListView(padding: const EdgeInsets.all(24),
-            children: [Text('সমিতির তালিকা লোড করা যায়নি: ${snapshot.error}')]);
-        }
-        final items = snapshot.data ?? [];
-        if (items.isEmpty) {
-          return ListView(padding: const EdgeInsets.all(24), children: const [
-            SizedBox(height: 90), Icon(Icons.groups_outlined, size: 64, color: Colors.grey),
-            SizedBox(height: 16), Text('এখনো কোনো সমিতি নেই', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8), Text('নতুন সমিতি তৈরি করতে নিচের + বাটন ব্যবহার করুন।', textAlign: TextAlign.center),
-          ]);
-        }
-        return ListView.separated(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          itemCount: items.length, separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return Card(child: ListTile(leading: const CircleAvatar(child: Icon(Icons.groups)),
-              title: Text(item['name']?.toString() ?? 'Unnamed committee'),
-              subtitle: Text('${item['slug'] ?? ''} · ${item['currency_code'] ?? 'BDT'}')));
-          });
-      }),
-    ),
-  );
-}
-
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -505,8 +442,8 @@ class _ProfilePageState extends State<ProfilePage> {
         'preferred_language': _language,
       }).eq('id', user.id);
       if (mounted) setState(() => _message = 'Profile সফলভাবে আপডেট হয়েছে।');
-    } on PostgrestException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
     } catch (e) {
       if (mounted) setState(() => _error = 'Profile update করা যায়নি: $e');
     } finally {
