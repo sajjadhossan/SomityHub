@@ -57,6 +57,7 @@ export default function HomePage() {
         if (authError) throw authError;
         if (data.session) {
           setMessage("Registration সফল হয়েছে। আপনার Profile স্বয়ংক্রিয়ভাবে তৈরি হওয়ার কথা।");
+          router.push("/committees");
         } else {
           setMessage("Registration request সফল। Email inbox থেকে confirmation link খুলুন, তারপর Login করুন।");
         }
@@ -129,7 +130,8 @@ export default function HomePage() {
               <h2>স্বাগতম</h2>
               <p className="subheading">আপনি এই Account দিয়ে Login আছেন: <strong>{userEmail}</strong></p>
               <div className="form-message">Authentication session active.</div>
-              <button className="primary-button" onClick={handleLogout} disabled={busy}>Logout</button>
+              <button className="primary-button" onClick={() => router.push("/committees")} disabled={busy}>Committee Workspace-এ যান</button>
+              <button className="text-button" onClick={handleLogout} disabled={busy}>Logout</button>
             </>
           ) : (
             <>
