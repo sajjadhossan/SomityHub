@@ -323,156 +323,56 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     final userId = TextEditingController();
     final phone = TextEditingController();
     final address = TextEditingController();
-    final values = await showDialog<bool>(
+    final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('নতুন সদস্য যোগ করুন'),
         content: Form(
           key: formKey,
-          child: SingleChildScrollView(child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('সদস্যের আগে থেকে SomityHub account থাকতে হবে। তার Account UUID প্রয়োজন।'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: userId,
-                decoration: const InputDecoration(labelText: 'User UUID'),
-                validator: (value) {
-                  final v = value?.trim() ?? '';
-                  final uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}
-  const ProfilePage({super.key});
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
-
-class _ProfilePageState extends State<ProfilePage> {
-  final _name = TextEditingController();
-  String _language = 'bn';
-  String _email = '';
-  bool _loading = true;
-  bool _saving = false;
-  String? _error;
-  String? _message;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadProfile() async {
-    try {
-      final client = Supabase.instance.client;
-      final user = client.auth.currentUser;
-      if (user == null) throw Exception('Login session পাওয়া যায়নি।');
-      _email = user.email ?? '';
-      final row = await client.from('profiles')
-        .select('display_name, preferred_language')
-        .eq('id', user.id).maybeSingle();
-      if (row == null) throw Exception('আপনার Profile record পাওয়া যায়নি।');
-      _name.text = (row['display_name'] ?? '').toString();
-      _language = row['preferred_language'] == 'en' ? 'en' : 'bn';
-    } catch (e) {
-      _error = 'Profile load করা যায়নি: $e';
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _saveProfile() async {
-    final name = _name.text.trim();
-    if (name.length < 2) {
-      setState(() => _error = 'নাম কমপক্ষে ২ অক্ষরের হতে হবে।');
-      return;
-    }
-    setState(() { _saving = true; _error = null; _message = null; });
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('Login session পাওয়া যায়নি।');
-      await Supabase.instance.client.from('profiles').update({
-        'display_name': name,
-        'preferred_language': _language,
-      }).eq('id', user.id);
-      if (mounted) setState(() => _message = 'Profile সফলভাবে আপডেট হয়েছে।');
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('আমার Profile')),
-    body: SafeArea(child: _loading
-      ? const Center(child: CircularProgressIndicator())
-      : ListView(padding: const EdgeInsets.all(20), children: [
-          Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Icon(Icons.account_circle_outlined, size: 64),
-              const SizedBox(height: 16),
-              TextFormField(initialValue: _email, readOnly: true,
-                decoration: const InputDecoration(labelText: 'Email Address')),
-              const SizedBox(height: 16),
-              TextField(controller: _name, maxLength: 120,
-                decoration: const InputDecoration(labelText: 'পূর্ণ নাম')),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: _language,
-                decoration: const InputDecoration(labelText: 'Interface Language'),
-                items: const [
-                  DropdownMenuItem(value: 'bn', child: Text('বাংলা')),
-                  DropdownMenuItem(value: 'en', child: Text('English')),
-                ],
-                onChanged: _saving ? null : (value) {
-                  if (value != null) setState(() => _language = value);
-                },
-              ),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: _saving ? null : _saveProfile,
-                child: _saving ? const CircularProgressIndicator() : const Text('Profile সংরক্ষণ করুন')),
-              if (_message != null) ...[
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('সদস্যের আগে থেকে SomityHub account থাকতে হবে। তার Account UUID প্রয়োজন।'),
                 const SizedBox(height: 12),
-                Text(_message!, style: const TextStyle(color: Colors.green)),
-              ],
-              if (_error != null) ...[
+                TextFormField(
+                  controller: userId,
+                  decoration: const InputDecoration(labelText: 'User UUID'),
+                  validator: (value) {
+                    final v = value?.trim() ?? '';
+                    final uuid = RegExp(r'^[0-9a-fA-F-]{36}$');
+                    return uuid.hasMatch(v) ? null : 'সঠিক User UUID দিন।';
+                  },
+                ),
                 const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                TextFormField(controller: phone, decoration: const InputDecoration(labelText: 'মোবাইল (ঐচ্ছিক)')),
+                const SizedBox(height: 12),
+                TextFormField(controller: address, decoration: const InputDecoration(labelText: 'ঠিকানা (ঐচ্ছিক)')),
               ],
-            ],
-          ))),
-        ])),
-  );
-}
-);
-                  return uuid.hasMatch(v) ? null : 'সঠিক User UUID দিন।';
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(controller: phone, decoration: const InputDecoration(labelText: 'মোবাইল (ঐচ্ছিক)')),
-              const SizedBox(height: 12),
-              TextFormField(controller: address, decoration: const InputDecoration(labelText: 'ঠিকানা (ঐচ্ছিক)')),
-            ],
-          )),
+            ),
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
-          FilledButton(onPressed: () {
-            if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true);
-          }, child: const Text('সদস্য যোগ করুন')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, true);
+              }
+            },
+            child: const Text('সদস্য যোগ করুন'),
+          ),
         ],
       ),
     );
-    if (values != true || !mounted) {
-      userId.dispose(); phone.dispose(); address.dispose();
+
+    if (accepted != true || !mounted) {
+      userId.dispose();
+      phone.dispose();
+      address.dispose();
       return;
     }
+
     try {
       final result = await Supabase.instance.client.rpc('add_committee_member', params: {
         'p_organization_id': widget.organizationId,
@@ -483,23 +383,32 @@ class _ProfilePageState extends State<ProfilePage> {
       final row = result is List && result.isNotEmpty ? result.first : result;
       final code = row is Map ? row['member_code'] : null;
       _refresh();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(code == null ? 'সদস্য যোগ হয়েছে।' : 'সদস্য যোগ হয়েছে। Member Code: $code'),
-      ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(code == null ? 'সদস্য যোগ হয়েছে।' : 'সদস্য যোগ হয়েছে। Member Code: $code'),
+        ));
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('সদস্য যোগ করা যায়নি: $e'),
-      ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('সদস্য যোগ করা যায়নি: $e'),
+        ));
+      }
     } finally {
-      userId.dispose(); phone.dispose(); address.dispose();
+      userId.dispose();
+      phone.dispose();
+      address.dispose();
     }
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.committeeName), actions: [
-      IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
-    ]),
+    appBar: AppBar(
+      title: Text(widget.committeeName),
+      actions: [
+        IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+      ],
+    ),
     floatingActionButton: FloatingActionButton.extended(
       onPressed: _addMember,
       icon: const Icon(Icons.person_add_alt_1),
@@ -512,34 +421,53 @@ class _ProfilePageState extends State<ProfilePage> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return ListView(padding: const EdgeInsets.all(20), children: [
-            Text('সদস্য তালিকা লোড করা যায়নি: ${snapshot.error}'),
-            const SizedBox(height: 8),
-            const Text('আপনার committee manager permission এবং Membership SELECT policy যাচাই করুন।'),
-          ]);
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text('সদস্য তালিকা লোড করা যায়নি: $' + '{snapshot.error}'),
+              const SizedBox(height: 8),
+              const Text('আপনার committee manager permission এবং Membership SELECT policy যাচাই করুন।'),
+            ],
+          );
         }
+
         final members = snapshot.data ?? [];
-        final activeCount = members.where((m) => m['is_active'] == true).length;
+        final activeCount = members.where((member) => member['is_active'] == true).length;
+
         return RefreshIndicator(
           onRefresh: () async => _refresh(),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
             children: [
-              Card(child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Row(children: [
-                  const Icon(Icons.groups_outlined, size: 36),
-                  const SizedBox(width: 16),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('মোট সদস্য'),
-                    Text('${members.length}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-                  ])),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('সক্রিয় সদস্য'),
-                    Text('$activeCount', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-                  ])),
-                ]),
-              )),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.groups_outlined, size: 36),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('মোট সদস্য'),
+                            Text(members.length.toString(), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('সক্রিয় সদস্য'),
+                            Text(activeCount.toString(), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               const Text('সদস্য তালিকা', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -550,9 +478,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 )),
               for (final member in members)
                 Card(child: ListTile(
-                  leading: CircleAvatar(child: Text(
-                    (member['member_code']?.toString().startsWith('ADM-') ?? false) ? 'A' : 'M',
-                  )),
+                  leading: CircleAvatar(
+                    child: Text((member['member_code']?.toString().startsWith('ADM-') ?? false) ? 'A' : 'M'),
+                  ),
                   title: Text(member['member_code']?.toString() ?? 'Member'),
                   subtitle: Text([
                     member['role']?.toString() ?? 'member',
