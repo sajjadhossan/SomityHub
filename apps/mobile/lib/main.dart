@@ -203,9 +203,14 @@ class _CommitteePageState extends State<CommitteePage> {
     ));
     controller.dispose();
     if (name == null || !mounted) return;
+    // Keep the committee name exactly as entered (Bangla included).
     final asciiSlug = name.toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
-        .replaceAll(RegExp(r'^-+|-+    try {
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    final slug = asciiSlug.length >= 3
+        ? asciiSlug
+        : 'committee-${DateTime.now().microsecondsSinceEpoch}';
+    try {
       final result = await Supabase.instance.client.rpc('create_committee',
         params: {'p_name': name, 'p_slug': slug});
       _refresh();
