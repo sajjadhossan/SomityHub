@@ -103,7 +103,10 @@ export default function CommitteesPage() {
     <main className="workspace-shell">
       <header className="workspace-header">
         <a className="brand" href="/">SomitiPro</a>
-        <button className="text-button" type="button" onClick={handleLogout}>Logout</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <button className="text-button" type="button" onClick={() => router.push("/profile")}>আমার Profile</button>
+          <button className="text-button" type="button" onClick={handleLogout}>Logout</button>
+        </div>
       </header>
 
       <section className="workspace-content">
