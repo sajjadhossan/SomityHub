@@ -30,7 +30,7 @@ jobs:
       - name: Check Flutter app exists
         run: |
           if [ ! -f "apps/mobile/pubspec.yaml" ]; then
-            echo "::error::Flutter mobile app is not in the repository yet. Expected apps/mobile/pubspec.yaml. The current repository contains the Next.js web app only."
+            echo "::error::Flutter mobile app pubspec.yaml is missing."
             exit 1
           fi
 
@@ -61,16 +61,35 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Generate Android platform project
+        working-directory: apps/mobile
+        run: |
+          flutter create --platforms=android --org com.somityhub --project-name app .
+          sed -i 's/android:label="app"/android:label="SomityHub"/' android/app/src/main/AndroidManifest.xml
+
       - name: Install Flutter dependencies
         working-directory: apps/mobile
         run: flutter pub get
 
+      - name: Verify Supabase build variables
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$SUPABASE_URL" || { echo "::error::Add repository Actions Variable SUPABASE_URL."; exit 1; }
+          test -n "$SUPABASE_PUBLISHABLE_KEY" || { echo "::error::Add repository Actions Variable SUPABASE_PUBLISHABLE_KEY."; exit 1; }
+
       - name: Build split release APKs
         working-directory: apps/mobile
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           flutter build apk --release --split-per-abi \
             --build-name="${{ steps.version.outputs.version }}" \
-            --build-number="${{ github.run_number }}"
+            --build-number="${{ github.run_number }}" \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
       - name: Rename APKs with version
         shell: bash
