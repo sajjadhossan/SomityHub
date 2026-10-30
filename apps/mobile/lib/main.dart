@@ -99,11 +99,11 @@ class _LoginPageState extends State<LoginPage> {
         await auth.signInWithPassword(email: _email.text.trim(), password: _password.text);
       }
     } on AuthException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) { setState(() => _error = e.message); }
     } catch (e) {
-      if (mounted) setState(() => _error = 'Request failed: $e');
+      if (mounted) { setState(() => _error = 'Request failed: $e'); }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) { setState(() => _busy = false); }
     }
   }
 
@@ -112,11 +112,11 @@ class _LoginPageState extends State<LoginPage> {
     setState(() { _busy = true; _error = null; _message = null; });
     try {
       await Supabase.instance.client.auth.resetPasswordForEmail(_email.text.trim());
-      if (mounted) setState(() => _message = 'Email address registered থাকলে password reset link পাঠানো হয়েছে।');
+      if (mounted) { setState(() => _message = 'Email address registered থাকলে password reset link পাঠানো হয়েছে।'); }
     } on AuthException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) { setState(() => _error = e.message); }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) { setState(() => _busy = false); }
     }
   }
 
