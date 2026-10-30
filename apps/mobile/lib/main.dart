@@ -230,6 +230,8 @@ class _CommitteePageState extends State<CommitteePage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('SomityHub'), actions: [
       IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+      IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => const ProfilePage())), icon: const Icon(Icons.person_outline), tooltip: 'আমার Profile'),
       IconButton(onPressed: _signOut, icon: const Icon(Icons.logout), tooltip: 'Logout'),
     ]),
     floatingActionButton: FloatingActionButton.extended(onPressed: _createCommittee,
@@ -259,5 +261,120 @@ class _CommitteePageState extends State<CommitteePage> {
           });
       }),
     ),
+  );
+}
+
+
+class ProfilePage extends StatefulWidget {
+  const ProfilePage({super.key});
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  final _name = TextEditingController();
+  String _language = 'bn';
+  String _email = '';
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+  String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final client = Supabase.instance.client;
+      final user = client.auth.currentUser;
+      if (user == null) throw Exception('Login session পাওয়া যায়নি।');
+      _email = user.email ?? '';
+      final row = await client.from('profiles')
+        .select('display_name, preferred_language')
+        .eq('id', user.id).maybeSingle();
+      if (row == null) throw Exception('আপনার Profile record পাওয়া যায়নি।');
+      _name.text = (row['display_name'] ?? '').toString();
+      _language = row['preferred_language'] == 'en' ? 'en' : 'bn';
+    } catch (e) {
+      _error = 'Profile load করা যায়নি: $e';
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    final name = _name.text.trim();
+    if (name.length < 2) {
+      setState(() => _error = 'নাম কমপক্ষে ২ অক্ষরের হতে হবে।');
+      return;
+    }
+    setState(() { _saving = true; _error = null; _message = null; });
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) throw Exception('Login session পাওয়া যায়নি।');
+      await Supabase.instance.client.from('profiles').update({
+        'display_name': name,
+        'preferred_language': _language,
+      }).eq('id', user.id);
+      if (mounted) setState(() => _message = 'Profile সফলভাবে আপডেট হয়েছে।');
+    } on PostgrestException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Profile update করা যায়নি: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('আমার Profile')),
+    body: SafeArea(child: _loading
+      ? const Center(child: CircularProgressIndicator())
+      : ListView(padding: const EdgeInsets.all(20), children: [
+          Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Icon(Icons.account_circle_outlined, size: 64),
+              const SizedBox(height: 16),
+              TextFormField(initialValue: _email, readOnly: true,
+                decoration: const InputDecoration(labelText: 'Email Address')),
+              const SizedBox(height: 16),
+              TextField(controller: _name, maxLength: 120,
+                decoration: const InputDecoration(labelText: 'পূর্ণ নাম')),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _language,
+                decoration: const InputDecoration(labelText: 'Interface Language'),
+                items: const [
+                  DropdownMenuItem(value: 'bn', child: Text('বাংলা')),
+                  DropdownMenuItem(value: 'en', child: Text('English')),
+                ],
+                onChanged: _saving ? null : (value) {
+                  if (value != null) setState(() => _language = value);
+                },
+              ),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _saving ? null : _saveProfile,
+                child: _saving ? const CircularProgressIndicator() : const Text('Profile সংরক্ষণ করুন')),
+              if (_message != null) ...[
+                const SizedBox(height: 12),
+                Text(_message!, style: const TextStyle(color: Colors.green)),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ],
+            ],
+          ))),
+        ])),
   );
 }
