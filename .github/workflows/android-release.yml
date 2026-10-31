@@ -144,16 +144,16 @@ jobs:
           source = path.read_text(encoding="utf-8")
           if path.suffix == ".kts":
               if "import java.util.Properties" not in source:
-                  source = "import java.util.Properties\\n" + source
+                  source = "import java.util.Properties\n" + source
               loader = (
-                  '\\nval keystoreProperties = Properties()'
-                  '\\nval keystorePropertiesFile = rootProject.file("key.properties")'
-                  '\\nif (keystorePropertiesFile.exists()) {'
-                  '\\n    keystoreProperties.load(keystorePropertiesFile.inputStream())'
-                  '\\n}\\n'
+                  '\nval keystoreProperties = Properties()'
+                  '\nval keystorePropertiesFile = rootProject.file("key.properties")'
+                  '\nif (keystorePropertiesFile.exists()) {'
+                  '\n    keystoreProperties.load(keystorePropertiesFile.inputStream())'
+                  '\n}\n'
               )
               if "val keystoreProperties = Properties()" not in source:
-                  source = source.replace('\\nandroid {', loader + '\\nandroid {', 1)
+                  source = source.replace('\nandroid {', loader + '\nandroid {', 1)
               signing = '''
               signingConfigs {
                   create("release") {
@@ -165,21 +165,21 @@ jobs:
               }
               '''
               if 'create("release")' not in source:
-                  source = source.replace("android {", "android {\\n" + signing, 1)
+                  source = source.replace("android {", "android {\n" + signing, 1)
               source = re.sub(
-                  r'signingConfig\\s*=\\s*signingConfigs\\.getByName\\("debug"\\)',
+                  r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
                   'signingConfig = signingConfigs.getByName("release")',
                   source
               )
-              release_block = re.search(r'buildTypes\\s*\\{\\s*release\\s*\\{', source)
+              release_block = re.search(r'buildTypes\s*\{\s*release\s*\{', source)
               if not release_block:
                   raise SystemExit("Could not locate Android release buildType.")
               if 'signingConfig = signingConfigs.getByName("release")' not in source:
                   pos = release_block.end()
-                  source = source[:pos] + '\\n            signingConfig = signingConfigs.getByName("release")' + source[pos:]
+                  source = source[:pos] + '\n            signingConfig = signingConfigs.getByName("release")' + source[pos:]
           else:
               if "keystoreProperties =" not in source:
-                  source = "def keystoreProperties = new Properties()\\ndef keystorePropertiesFile = rootProject.file('key.properties')\\nif (keystorePropertiesFile.exists()) { keystoreProperties.load(new FileInputStream(keystorePropertiesFile)) }\\n" + source
+                  source = "def keystoreProperties = new Properties()\ndef keystorePropertiesFile = rootProject.file('key.properties')\nif (keystorePropertiesFile.exists()) { keystoreProperties.load(new FileInputStream(keystorePropertiesFile)) }\n" + source
               signing = '''
               signingConfigs {
                   release {
@@ -191,13 +191,13 @@ jobs:
               }
               '''
               if "signingConfigs {" not in source:
-                  source = source.replace("android {", "android {\\n" + signing, 1)
-              source = re.sub(r'signingConfig signingConfigs\\.debug', 'signingConfig signingConfigs.release', source)
-              release_block = re.search(r'buildTypes\\s*\\{\\s*release\\s*\\{', source)
+                  source = source.replace("android {", "android {\n" + signing, 1)
+              source = re.sub(r'signingConfig signingConfigs\.debug', 'signingConfig signingConfigs.release', source)
+              release_block = re.search(r'buildTypes\s*\{\s*release\s*\{', source)
               if not release_block:
                   raise SystemExit("Could not locate Android release buildType.")
               if "signingConfig signingConfigs.release" not in source:
-                  source = source[:release_block.end()] + "\\n            signingConfig signingConfigs.release" + source[release_block.end():]
+                  source = source[:release_block.end()] + "\n            signingConfig signingConfigs.release" + source[release_block.end():]
 
           if "signingConfigs.getByName(\"release\")" not in source and "signingConfig signingConfigs.release" not in source:
               raise SystemExit("Release signing configuration was not applied.")
