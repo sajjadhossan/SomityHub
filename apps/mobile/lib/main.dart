@@ -394,6 +394,80 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
 
   void _refresh() => setState(() => _members = _loadMembers());
 
+  static const _availableRoles = <String>[
+    'committee_admin',
+    'manager',
+    'treasurer',
+    'secretary',
+    'auditor',
+    'member',
+  ];
+
+  final Set<String> _updatingMemberships = <String>{};
+
+  Future<void> _changeMemberRole(
+    Map<String, dynamic> member,
+    String newRole,
+  ) async {
+    final membershipId = member['id'].toString();
+    final currentRole = member['role']?.toString() ?? 'member';
+    if (newRole == currentRole || _updatingMemberships.contains(membershipId)) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('সদস্যের Role পরিবর্তন করবেন?'),
+        content: Text(
+          '${member['member_code'] ?? 'সদস্য'}-এর Role '
+          '$currentRole থেকে $newRole করা হবে।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('বাতিল'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('নিশ্চিত করুন'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    setState(() => _updatingMemberships.add(membershipId));
+    try {
+      await Supabase.instance.client.rpc(
+        'admin_update_committee_member_role',
+        params: {
+          'p_organization_id': widget.organizationId,
+          'p_membership_id': membershipId,
+          'p_new_role': newRole,
+        },
+      );
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Role সফলভাবে $newRole করা হয়েছে।'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Role পরিবর্তন করা যায়নি: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _updatingMemberships.remove(membershipId));
+      }
+    }
+  }
+
   Future<void> _addMember() async {
     final formKey = GlobalKey<FormState>();
     final userId = TextEditingController();
@@ -508,6 +582,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         }
 
         final members = snapshot.data ?? [];
+        final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+        final currentMembership = members.where(
+          (member) =>
+              member['user_id']?.toString() == currentUserId &&
+              member['is_active'] == true,
+        );
+        final isCommitteeAdmin = currentMembership.isNotEmpty &&
+            currentMembership.first['role'] == 'committee_admin';
         final activeCount = members.where((member) => member['is_active'] == true).length;
 
         return RefreshIndicator(
@@ -566,7 +648,29 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     if ((member['details']?['address'] ?? '').toString().isNotEmpty)
                       member['details']['address'].toString(),
                   ].join(' · ')),
-                  trailing: const Icon(Icons.badge_outlined),
+                  trailing: isCommitteeAdmin &&
+                          member['user_id']?.toString() != currentUserId
+                      ? _updatingMemberships.contains(member['id'].toString())
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : PopupMenuButton<String>(
+                              tooltip: 'Role পরিবর্তন করুন',
+                              icon: const Icon(Icons.admin_panel_settings_outlined),
+                              onSelected: (role) => _changeMemberRole(member, role),
+                              itemBuilder: (context) => _availableRoles
+                                  .map(
+                                    (role) => PopupMenuItem<String>(
+                                      value: role,
+                                      enabled: role != member['role'],
+                                      child: Text(role),
+                                    ),
+                                  )
+                                  .toList(),
+                            )
+                      : const Icon(Icons.badge_outlined),
                 )),
             ],
           ),
