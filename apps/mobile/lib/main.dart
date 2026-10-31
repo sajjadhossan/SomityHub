@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -304,7 +305,7 @@ class _CommitteePageState extends State<CommitteePage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('SomityHub'), actions: [
       IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
-      IconButton(onPressed: _checkForUpdates, icon: const Icon(Icons.system_update_alt), tooltip: 'Update check'),
+      if (!kIsWeb) IconButton(onPressed: _checkForUpdates, icon: const Icon(Icons.system_update_alt), tooltip: 'Update check'),
       IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (_) => const ProfilePage())), icon: const Icon(Icons.person_outline), tooltip: 'আমার Profile'),
       IconButton(onPressed: _signOut, icon: const Icon(Icons.logout), tooltip: 'Logout'),
