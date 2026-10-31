@@ -208,7 +208,7 @@ class _CommitteePageState extends State<CommitteePage> {
       }
       final release = jsonDecode(response.body) as Map<String, dynamic>;
       final releaseName = (release['name'] ?? '').toString();
-      final versionMatch = RegExp(r'(\\d+\\.\\d+\\.\\d+)').firstMatch(releaseName);
+      final versionMatch = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(releaseName);
       if (versionMatch == null) {
         throw Exception('Latest release version পাওয়া যায়নি।');
       }
@@ -238,7 +238,7 @@ class _CommitteePageState extends State<CommitteePage> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('নতুন Update পাওয়া গেছে'),
-          content: Text('বর্তমান version: ${current.version}\\nনতুন version: $latestVersion\\n\\nAPK download করে Android-এর installer থেকে update করুন। আপনার app data সাধারণত অক্ষত থাকবে।'),
+          content: Text('বর্তমান version: ${current.version}\nনতুন version: $latestVersion\n\nAPK download করে Android-এর installer থেকে update করুন। আপনার app data সাধারণত অক্ষত থাকবে।'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('পরে')),
             FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Download Update')),
