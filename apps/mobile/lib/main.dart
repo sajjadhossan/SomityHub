@@ -1,4 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -188,6 +193,75 @@ class _CommitteePageState extends State<CommitteePage> {
 
   void _refresh() => setState(() => _committees = _loadCommittees());
 
+  Future<void> _checkForUpdates() async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('নতুন version খোঁজা হচ্ছে...')),
+    );
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.github.com/repos/sajjadhossan/SomityHub/releases/tags/latest'),
+        headers: const {'Accept': 'application/vnd.github+json'},
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('Update server response: ${response.statusCode}');
+      }
+      final release = jsonDecode(response.body) as Map<String, dynamic>;
+      final releaseName = (release['name'] ?? '').toString();
+      final versionMatch = RegExp(r'(\\d+\\.\\d+\\.\\d+)').firstMatch(releaseName);
+      if (versionMatch == null) {
+        throw Exception('Latest release version পাওয়া যায়নি।');
+      }
+      final latestVersion = versionMatch.group(1)!;
+      final current = await PackageInfo.fromPlatform();
+      int compareVersions(String a, String b) {
+        final left = a.split('.').map(int.parse).toList();
+        final right = b.split('.').map(int.parse).toList();
+        for (var i = 0; i < 3; i++) {
+          final x = i < left.length ? left[i] : 0;
+          final y = i < right.length ? right[i] : 0;
+          if (x != y) return x.compareTo(y);
+        }
+        return 0;
+      }
+      if (!mounted) return;
+      if (compareVersions(latestVersion, current.version) <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('আপনার অ্যাপ সর্বশেষ version ${current.version}-এ আছে।')),
+        );
+        return;
+      }
+      final downloadUri = Uri.parse(
+        'https://github.com/sajjadhossan/SomityHub/releases/latest/download/SomityHub-latest.apk',
+      );
+      final install = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('নতুন Update পাওয়া গেছে'),
+          content: Text('বর্তমান version: ${current.version}\\nনতুন version: $latestVersion\\n\\nAPK download করে Android-এর installer থেকে update করুন। আপনার app data সাধারণত অক্ষত থাকবে।'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('পরে')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Download Update')),
+          ],
+        ),
+      );
+      if (install == true) {
+        final opened = await launchUrl(downloadUri, mode: LaunchMode.externalApplication);
+        if (!opened && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Download link খোলা যায়নি।')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Update check করা যায়নি: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _createCommittee() async {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -230,6 +304,7 @@ class _CommitteePageState extends State<CommitteePage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('SomityHub'), actions: [
       IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+      IconButton(onPressed: _checkForUpdates, icon: const Icon(Icons.system_update_alt), tooltip: 'Update check'),
       IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (_) => const ProfilePage())), icon: const Icon(Icons.person_outline), tooltip: 'আমার Profile'),
       IconButton(onPressed: _signOut, icon: const Icon(Icons.logout), tooltip: 'Logout'),
