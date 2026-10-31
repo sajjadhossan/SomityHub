@@ -152,7 +152,10 @@ export default function CommitteesPage() {
                     <p>{committee.slug}</p>
                     <span>{committee.currency_code} · {committee.timezone}</span>
                   </div>
-                  <span className="committee-date">{new Date(committee.created_at).toLocaleDateString("bn-BD")}</span>
+                  <div className="committee-card-actions">
+                    <span className="committee-date">{new Date(committee.created_at).toLocaleDateString("bn-BD")}</span>
+                    <button className="primary-button committee-open-button" type="button" onClick={() => router.push(`/committees/${committee.id}`)}>Manage Committee</button>
+                  </div>
                 </article>
               ))}
             </div>
