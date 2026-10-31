@@ -107,6 +107,106 @@ jobs:
           print("Verified: Android INTERNET permission is present.")
           PY
 
+      - name: Configure permanent Android release signing
+        working-directory: apps/mobile
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing GitHub Actions Secret: $name"
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/somityhub-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=somityhub-release.jks
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          app = Path("android/app")
+          kotlin = app / "build.gradle.kts"
+          groovy = app / "build.gradle"
+          path = kotlin if kotlin.exists() else groovy
+          if not path.exists():
+              raise SystemExit("Generated Android app Gradle file was not found.")
+
+          source = path.read_text(encoding="utf-8")
+          if path.suffix == ".kts":
+              if "import java.util.Properties" not in source:
+                  source = "import java.util.Properties\\n" + source
+              loader = (
+                  '\\nval keystoreProperties = Properties()'
+                  '\\nval keystorePropertiesFile = rootProject.file("key.properties")'
+                  '\\nif (keystorePropertiesFile.exists()) {'
+                  '\\n    keystoreProperties.load(keystorePropertiesFile.inputStream())'
+                  '\\n}\\n'
+              )
+              if "val keystoreProperties = Properties()" not in source:
+                  source = source.replace('\\nandroid {', loader + '\\nandroid {', 1)
+              signing = '''
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }
+              '''
+              if 'create("release")' not in source:
+                  source = source.replace("android {", "android {\\n" + signing, 1)
+              source = re.sub(
+                  r'signingConfig\\s*=\\s*signingConfigs\\.getByName\\("debug"\\)',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  source
+              )
+              release_block = re.search(r'buildTypes\\s*\\{\\s*release\\s*\\{', source)
+              if not release_block:
+                  raise SystemExit("Could not locate Android release buildType.")
+              if 'signingConfig = signingConfigs.getByName("release")' not in source:
+                  pos = release_block.end()
+                  source = source[:pos] + '\\n            signingConfig = signingConfigs.getByName("release")' + source[pos:]
+          else:
+              if "keystoreProperties =" not in source:
+                  source = "def keystoreProperties = new Properties()\\ndef keystorePropertiesFile = rootProject.file('key.properties')\\nif (keystorePropertiesFile.exists()) { keystoreProperties.load(new FileInputStream(keystorePropertiesFile)) }\\n" + source
+              signing = '''
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile file(keystoreProperties['storeFile'])
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+              '''
+              if "signingConfigs {" not in source:
+                  source = source.replace("android {", "android {\\n" + signing, 1)
+              source = re.sub(r'signingConfig signingConfigs\\.debug', 'signingConfig signingConfigs.release', source)
+              release_block = re.search(r'buildTypes\\s*\\{\\s*release\\s*\\{', source)
+              if not release_block:
+                  raise SystemExit("Could not locate Android release buildType.")
+              if "signingConfig signingConfigs.release" not in source:
+                  source = source[:release_block.end()] + "\\n            signingConfig signingConfigs.release" + source[release_block.end():]
+
+          if "signingConfigs.getByName(\"release\")" not in source and "signingConfig signingConfigs.release" not in source:
+              raise SystemExit("Release signing configuration was not applied.")
+          path.write_text(source, encoding="utf-8")
+          print("Configured permanent release signing.")
+          PY
+          keytool -list -keystore android/app/somityhub-release.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "Verified permanent Android signing keystore."
+
       - name: Install Flutter dependencies
         working-directory: apps/mobile
         run: flutter pub get
@@ -145,6 +245,14 @@ jobs:
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
+      - name: Verify permanent APK signing
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          test -f "$APK" || { echo "::error::ARM64 APK missing."; exit 1; }
+          apksigner verify --verbose --print-certs "$APK"
+
       - name: Prepare versioned APK files
         shell: bash
         run: |
@@ -158,6 +266,12 @@ jobs:
             echo "::error::No APK files were produced."
             exit 1
           }
+          UNIVERSAL="apps/mobile/build/app/outputs/flutter-apk/app-release.apk"
+          test -f "$UNIVERSAL" || {
+            echo "::error::Universal APK was not produced."
+            exit 1
+          }
+          cp "$UNIVERSAL" "release-apks/SomityHub-latest.apk"
           ls -lh release-apks
 
       - name: Upload APKs for preview
@@ -177,3 +291,23 @@ jobs:
           prerelease: ${{ github.ref_type != 'tag' }}
           generate_release_notes: true
           files: release-apks/*.apk
+
+      - name: Move stable latest tag to this commit
+        if: github.ref_type != 'tag'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "$GITHUB_SHA"
+          git push origin refs/tags/latest --force
+
+      - name: Publish stable Latest APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          target_commitish: ${{ github.sha }}
+          name: SomityHub v${{ steps.version.outputs.version }}
+          body: "Latest version: ${{ steps.version.outputs.version }}\\n\\nInstall this APK over the existing SomityHub app to update."
+          prerelease: false
+          make_latest: true
+          overwrite_files: true
+          files: release-apks/SomityHub-latest.apk
