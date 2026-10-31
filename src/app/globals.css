@@ -84,3 +84,36 @@ button { cursor: pointer; }
 
 .field select { width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:10px; background:white; color:var(--ink); font:inherit; }
 .field select:focus { outline:none; border-color:var(--green); box-shadow:0 0 0 3px #176b4518; }
+
+
+/* Committee administration workspace */
+.admin-header-actions { display:flex; align-items:center; gap:18px; }
+.admin-content { max-width:1080px; }
+.committee-card-actions { display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+.committee-open-button { width:auto; margin:0; padding:10px 14px; font-size:13px; }
+.admin-stat-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.admin-stat { display:grid; gap:8px; }
+.admin-stat span { color:var(--muted); font-size:13px; }
+.admin-stat strong { font-size:28px; color:var(--green-dark); }
+.admin-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.admin-submit { max-width:240px; }
+.admin-member-heading { align-items:flex-start; }
+.admin-member-heading .card-description { margin:6px 0 0; }
+.admin-member-list { display:grid; gap:10px; margin-top:16px; }
+.admin-member-row { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:16px; border:1px solid var(--line); border-radius:12px; }
+.admin-member-main { display:grid; gap:5px; min-width:0; }
+.admin-member-main strong { font-size:15px; }
+.admin-member-main span { color:var(--green-dark); font-size:13px; }
+.admin-member-main small { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.admin-role-control { min-width:175px; }
+.admin-role-control select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:white; color:var(--ink); }
+.role-readonly { display:block; color:var(--muted); font-size:13px; text-align:right; }
+@media(max-width:700px) {
+  .admin-stat-grid { grid-template-columns:1fr; gap:10px; }
+  .admin-form-grid { grid-template-columns:1fr; gap:0; }
+  .admin-member-row { align-items:stretch; flex-direction:column; }
+  .admin-role-control { min-width:0; }
+  .role-readonly { text-align:left; }
+  .admin-header-actions { gap:10px; }
+  .committee-card-actions { align-items:flex-start; width:100%; }
+}
