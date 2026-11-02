@@ -655,9 +655,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       throw Exception('এই account-টি এই সমিতির সদস্য নয়। Admin-এর কাছে account যোগ করতে বলুন।');
     }
     _currentMembershipId = actorRows.first['id'].toString();
-    _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
-    _currentRole = actorRows.first['role']?.toString() ?? 'member';
-    _canManageMembers = _isCommitteeAdmin || actorRows.first['role'] == 'manager';
+    final role = actorRows.first['role']?.toString() ?? 'member';
+    if (mounted) {
+      setState(() {
+        _isCommitteeAdmin = role == 'committee_admin';
+        _currentRole = role;
+        _canManageMembers = _isCommitteeAdmin || role == 'manager';
+      });
+    }
 
     final profileIds = members.map((member) => member['user_id'].toString()).toSet().toList();
     if (profileIds.isNotEmpty) {
