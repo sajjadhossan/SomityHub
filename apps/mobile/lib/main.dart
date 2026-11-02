@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'cooperative_documents_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -1248,6 +1249,17 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     )),
                     icon: const Icon(Icons.account_balance_wallet_outlined),
                     label: const Text('আর্থিক হিসাব ও লেনদেন'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => CooperativeDocumentsPage(
+                        organizationId: widget.organizationId,
+                        role: _currentRole,
+                      ),
+                    )),
+                    icon: const Icon(Icons.folder_copy_outlined),
+                    label: const Text('সমিতির নথিপত্র'),
                   ),
                 ]),
               )),
