@@ -12,6 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'cooperative_documents_page.dart';
 import 'cooperative_operations_page.dart';
+import 'multi_branch_assignment_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -1233,10 +1234,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => BranchMemberAssignmentPage(organizationId: widget.organizationId),
+                        builder: (_) => MultiBranchMemberAssignmentPage(organizationId: widget.organizationId),
                       )),
                       icon: const Icon(Icons.people_alt_outlined),
-                      label: const Text('সদস্যের শাখা নির্ধারণ'),
+                      label: const Text('সদস্যের একাধিক শাখা নির্ধারণ'),
                     ),
                   ],
                   OutlinedButton.icon(
