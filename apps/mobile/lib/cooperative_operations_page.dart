@@ -34,6 +34,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   bool get _canReviewFinance => const ['committee_admin', 'manager', 'treasurer'].contains(widget.role);
   bool get _canFinance => const ['committee_admin', 'manager', 'treasurer', 'accountant', 'auditor'].contains(widget.role);
   bool get _canCreateVoucher => const ['committee_admin', 'manager', 'treasurer', 'accountant'].contains(widget.role);
+  bool get _canProcessLoanCash => const ['committee_admin', 'manager', 'treasurer', 'accountant'].contains(widget.role);
   bool get _canManageMeetings => const ['committee_admin', 'manager', 'general_secretary', 'secretary'].contains(widget.role);
 
   @override
