@@ -273,26 +273,37 @@ jobs:
           fi
           "$APKSIGNER" verify --verbose --print-certs "$APK"
 
-      - name: Prepare versioned APK files
+      - name: Prepare versioned and stable APK files
         shell: bash
         run: |
-          mkdir -p release-apks
+          mkdir -p release-apks release-stable
           for apk in apps/mobile/build/app/outputs/flutter-apk/*-release.apk; do
             [ -f "$apk" ] || continue
-            abi="$(basename "$apk" | sed 's/^app-//; s/-release\.apk$//')"
-            cp "$apk" "release-apks/SomityHub-${{ steps.version.outputs.version }}-$abi.apk"
+            filename="$(basename "$apk")"
+            if [[ "$filename" == "app-release.apk" ]]; then
+              continue
+            fi
+            abi="$(echo "$filename" | sed 's/^app-//; s/-release\.apk$//')"
+            versioned="SomityHub-${{ steps.version.outputs.version }}-$abi.apk"
+            cp "$apk" "release-apks/$versioned"
+            case "$abi" in
+              arm64-v8a) cp "$apk" release-stable/SomityHub-arm64-v8a.apk ;;
+              armeabi-v7a) cp "$apk" release-stable/SomityHub-armeabi-v7a.apk ;;
+              x86_64) cp "$apk" release-stable/SomityHub-x86_64.apk ;;
+              *) echo "::error::Unexpected APK ABI: $abi"; exit 1 ;;
+            esac
           done
-          test -n "$(find release-apks -maxdepth 1 -name '*.apk' -print -quit)" || {
-            echo "::error::No APK files were produced."
-            exit 1
-          }
+          for apk in release-stable/SomityHub-arm64-v8a.apk release-stable/SomityHub-armeabi-v7a.apk release-stable/SomityHub-x86_64.apk; do
+            test -f "$apk" || { echo "::error::Expected ABI APK missing: $apk"; exit 1; }
+          done
           UNIVERSAL="apps/mobile/build/app/outputs/flutter-apk/app-release.apk"
           test -f "$UNIVERSAL" || {
             echo "::error::Universal APK was not produced."
             exit 1
           }
-          cp "$UNIVERSAL" "release-apks/SomityHub-latest.apk"
-          ls -lh release-apks
+          cp "$UNIVERSAL" release-apks/SomityHub-latest.apk
+          cp "$UNIVERSAL" release-stable/SomityHub-latest.apk
+          ls -lh release-apks release-stable
 
       - name: Upload APKs for preview
         uses: actions/upload-artifact@v4
@@ -329,4 +340,4 @@ jobs:
           prerelease: false
           make_latest: true
           overwrite_files: true
-          files: release-apks/SomityHub-latest.apk
+          files: release-stable/*.apk
