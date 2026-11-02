@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -196,6 +196,18 @@ class _CommitteePageState extends State<CommitteePage> {
 
   Future<void> _checkForUpdates() async {
     if (!mounted) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      final opened = await launchUrl(
+        Uri.parse('https://github.com/sajjadhossan/SomityHub/releases/tag/desktop-latest'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Desktop download page খোলা যায়নি।')),
+        );
+      }
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('নতুন version খোঁজা হচ্ছে...')),
     );
