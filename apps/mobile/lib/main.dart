@@ -493,15 +493,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     return 'অজানা';
   }
 
-  Color _membershipStatusColor(Object? status) {
-    switch (status?.toString()) {
-      case 'active': return Colors.green;
-      case 'pending': return Colors.orange;
-      case 'suspended':
-      case 'expired': return Colors.red;
-      default: return Colors.grey;
-    }
-  }
+
 
   @override
   void dispose() {
@@ -984,8 +976,11 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         ));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('সদস্যের অবস্থা পরিবর্তন হয়নি: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('সদস্যের অবস্থা পরিবর্তন হয়নি: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _savingMember = false);
     }
