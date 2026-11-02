@@ -73,7 +73,7 @@ class _CooperativeDocumentsPageState extends State<CooperativeDocumentsPage> {
     }
 
     final titleController = TextEditingController(
-      text: file.name.replaceFirst(RegExp(r'\.[^.]+, ''),
+      text: file.name.replaceFirst(RegExp(r'\\.[^.]+
     );
     final typeController = TextEditingController(text: 'সাধারণ নথি');
     var visibility = 'committee';
