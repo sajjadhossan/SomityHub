@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -188,7 +190,7 @@ class _CommitteePageState extends State<CommitteePage> {
 
   Future<List<Map<String, dynamic>>> _loadCommittees() async {
     final rows = await Supabase.instance.client.from('organizations')
-      .select('id, name, slug, currency_code, created_at').order('created_at', ascending: false);
+      .select('id, name, slug, currency_code, created_at, logo_path, version, updated_at').order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(rows);
   }
 
@@ -244,27 +246,57 @@ class _CommitteePageState extends State<CommitteePage> {
         );
         return;
       }
-      final downloadUri = Uri.parse(
-        'https://github.com/sajjadhossan/SomityHub/releases/latest/download/SomityHub-latest.apk',
-      );
-      final install = await showDialog<bool>(
+      final assets = List<Map<String, dynamic>>.from(release['assets'] as List? ?? const []);
+      final abiInfo = await DeviceInfoPlugin().androidInfo;
+      if (!mounted) return;
+      final supportedAbis = abiInfo.supportedAbis.toSet();
+      const abiAssetNames = <String, String>{
+        'arm64-v8a': 'SomityHub-arm64-v8a.apk',
+        'armeabi-v7a': 'SomityHub-armeabi-v7a.apk',
+        'x86_64': 'SomityHub-x86_64.apk',
+      };
+      final compatible = assets.where((asset) {
+        final name = asset['name']?.toString();
+        return abiAssetNames.entries.any((entry) =>
+          supportedAbis.contains(entry.key) && entry.value == name);
+      }).toList()
+        ..sort((a, b) => (a['size'] as num? ?? 0).compareTo(b['size'] as num? ?? 0));
+      final universal = assets.where((asset) => asset['name'] == 'SomityHub-latest.apk').toList();
+      final choices = compatible.isNotEmpty ? compatible : universal;
+      if (choices.isEmpty) throw Exception('এই ফোনের জন্য APK পাওয়া যায়নি।');
+      Map<String, dynamic> selectedChoice = choices.first;
+      final selectedAsset = await showDialog<Map<String, dynamic>>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('নতুন Update পাওয়া গেছে'),
-          content: Text('বর্তমান version: ${current.version}\nনতুন version: $latestVersion\n\nAPK download করে Android-এর installer থেকে update করুন। আপনার app data সাধারণত অক্ষত থাকবে।'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('পরে')),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Download Update')),
-          ],
-        ),
-      );
-      if (install == true) {
-        final opened = await launchUrl(downloadUri, mode: LaunchMode.externalApplication);
-        if (!opened && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Download link খোলা যায়নি।')),
+        builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('ফোনের উপযোগী APK বাছুন'),
+            content: RadioGroup<Map<String, dynamic>>(
+              groupValue: selectedChoice,
+              onChanged: (asset) { if (asset != null) setDialogState(() => selectedChoice = asset); },
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+              for (var index = 0; index < choices.length; index++) ...[
+                _ApkChoiceTile(
+                  asset: choices[index],
+                  recommended: index == 0,
+                ),
+              ],
+              if (compatible.isEmpty)
+                const Text('ABI মিলিয়ে APK পাওয়া যায়নি; Universal APK দেখানো হচ্ছে।'),
+            ])),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('পরে')),
+              FilledButton(onPressed: () => Navigator.pop(dialogContext, selectedChoice), child: const Text('Download Update')),
+            ],
           );
-        }
+        }),
+      );
+      if (selectedAsset == null) return;
+      final downloadUri = Uri.parse(selectedAsset['browser_download_url'].toString());
+      final opened = await launchUrl(downloadUri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Download link খোলা যায়নি।')),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -343,21 +375,51 @@ class _CommitteePageState extends State<CommitteePage> {
           itemCount: items.length, separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final item = items[index];
-            return Card(child: ListTile(leading: const CircleAvatar(child: Icon(Icons.groups)),
+            final logoPath = item['logo_path']?.toString();
+            final logoUrl = logoPath == null ? null : Supabase.instance.client.storage
+                .from('committee-logos').getPublicUrl(logoPath);
+            final version = item['version'] as num? ?? 1;
+            return Card(child: ListTile(leading: CircleAvatar(
+                backgroundImage: logoUrl == null ? null : NetworkImage('$logoUrl?v=$version'),
+                child: logoUrl == null ? const Icon(Icons.groups) : null),
               title: Text(item['name']?.toString() ?? 'Unnamed committee'),
-              subtitle: Text('${item['slug'] ?? ''} · ${item['currency_code'] ?? 'BDT'}'),
+              subtitle: Text('${item['slug'] ?? ''} · ${item['currency_code'] ?? 'BDT'} · সংস্করণ $version'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              onTap: () async {
+                await Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => CommitteeWorkspacePage(
                   organizationId: item['id'].toString(),
                   committeeName: item['name']?.toString() ?? 'সমিতি',
+                  logoPath: logoPath,
+                  version: version.toInt(),
                 ),
-              )),
+              ));
+                _refresh();
+              },
             ));
           });
       }),
     ),
   );
+}
+
+class _ApkChoiceTile extends StatelessWidget {
+  const _ApkChoiceTile({required this.asset, required this.recommended});
+
+  final Map<String, dynamic> asset;
+  final bool recommended;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = (asset['size'] as num?)?.toInt() ?? 0;
+    final megabytes = (bytes / (1024 * 1024)).toStringAsFixed(1);
+    final name = asset['name']?.toString() ?? 'APK';
+    final label = name.replaceAll('SomityHub-', '').replaceAll('.apk', '');
+    return RadioListTile<Map<String, dynamic>>(
+      value: asset,
+      title: Text('$label · $megabytes MB${recommended ? ' · ছোটতম' : ''}'),
+    );
+  }
 }
 
 
@@ -366,10 +428,14 @@ class CommitteeWorkspacePage extends StatefulWidget {
     super.key,
     required this.organizationId,
     required this.committeeName,
+    required this.logoPath,
+    required this.version,
   });
 
   final String organizationId;
   final String committeeName;
+  final String? logoPath;
+  final int version;
 
   @override
   State<CommitteeWorkspacePage> createState() => _CommitteeWorkspacePageState();
@@ -384,6 +450,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   bool _canManageMembers = false;
   bool _isCommitteeAdmin = false;
   bool _savingMember = false;
+  late String _committeeName;
+  String? _committeeLogoPath;
+  int _committeeVersion = 1;
+  bool _savingCommittee = false;
 
   static const _committeeRoles = <(String, String)>[
     ('committee_admin', 'অ্যাডমিন'),
@@ -414,7 +484,113 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   @override
   void initState() {
     super.initState();
+    _committeeName = widget.committeeName;
+    _committeeLogoPath = widget.logoPath;
+    _committeeVersion = widget.version;
     _members = _loadMembers();
+  }
+
+  Future<void> _editCommittee() async {
+    final name = TextEditingController(text: _committeeName);
+    final formKey = GlobalKey<FormState>();
+    PlatformFile? selectedLogo;
+    final saved = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('সমিতির তথ্য সম্পাদনা'),
+        content: Form(key: formKey, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextFormField(controller: name, decoration: const InputDecoration(labelText: 'সমিতির নাম'),
+            validator: (value) => value == null || value.trim().length < 2 ? 'কমপক্ষে ২ অক্ষরের নাম দিন।' : null),
+          const SizedBox(height: 12),
+          if (selectedLogo?.bytes != null) CircleAvatar(radius: 32, backgroundImage: MemoryImage(selectedLogo!.bytes!)),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final result = await FilePicker.platform.pickFiles(type: FileType.image, allowMultiple: false, withData: true);
+              if (result != null && result.files.isNotEmpty && context.mounted) {
+                setDialogState(() => selectedLogo = result.files.first);
+              }
+            },
+            icon: const Icon(Icons.image_outlined),
+            label: Text(selectedLogo == null ? 'লোগো বাছুন (JPG/PNG/WebP)' : 'অন্য লোগো বাছুন'),
+          ),
+          const Text('লোগো সর্বোচ্চ ২ MB; JPG, PNG বা WebP।'),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true); }, child: const Text('সংরক্ষণ')),
+        ],
+      ),
+    ));
+    if (saved != true || !mounted) { name.dispose(); return; }
+    setState(() => _savingCommittee = true);
+    try {
+      String? newLogoPath = _committeeLogoPath;
+      final bytes = selectedLogo?.bytes;
+      if (selectedLogo != null) {
+        if (bytes == null || bytes.isEmpty || bytes.length > 2 * 1024 * 1024) {
+          throw Exception('লোগোটি পড়া যায়নি অথবা ২ MB-এর বেশি।');
+        }
+        final extension = (selectedLogo!.extension ?? '').toLowerCase();
+        const mimeTypes = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp'};
+        final mime = mimeTypes[extension];
+        if (mime == null) throw Exception('JPG, PNG বা WebP ফাইল ব্যবহার করুন।');
+        newLogoPath = '${widget.organizationId}/${DateTime.now().microsecondsSinceEpoch}.$extension';
+        await Supabase.instance.client.storage.from('committee-logos').uploadBinary(
+          newLogoPath, bytes, fileOptions: FileOptions(contentType: mime, upsert: false));
+      }
+      final updated = await Supabase.instance.client.from('organizations').update({
+        'name': name.text.trim(), 'logo_path': newLogoPath,
+      }).eq('id', widget.organizationId).select('version, logo_path').single();
+      if (!mounted) return;
+      setState(() {
+        _committeeName = name.text.trim();
+        _committeeLogoPath = updated['logo_path']?.toString();
+        _committeeVersion = (updated['version'] as num).toInt();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতির তথ্য সংরক্ষিত · সংস্করণ $_committeeVersion')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('সমিতির তথ্য সংরক্ষণ হয়নি: $e')));
+    } finally {
+      name.dispose();
+      if (mounted) setState(() => _savingCommittee = false);
+    }
+  }
+
+  Future<void> _showCommitteeHistory() async {
+    try {
+      final rows = await Supabase.instance.client.from('audit_log')
+        .select('actor_id, before_data, after_data, created_at')
+        .eq('organization_id', widget.organizationId)
+        .eq('action', 'committee_profile_updated')
+        .order('created_at', ascending: false)
+        .limit(20);
+      if (!mounted) return;
+      final history = List<Map<String, dynamic>>.from(rows);
+      await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+        title: const Text('সমিতির পরিবর্তনের ইতিহাস'),
+        content: SizedBox(width: 420, child: history.isEmpty
+          ? const Text('এখনো কোনো নাম বা লোগো পরিবর্তন হয়নি।')
+          : ListView.separated(shrinkWrap: true, itemCount: history.length,
+            separatorBuilder: (_, __) => const Divider(),
+            itemBuilder: (context, index) {
+              final entry = history[index];
+              final before = Map<String, dynamic>.from(entry['before_data'] as Map);
+              final after = Map<String, dynamic>.from(entry['after_data'] as Map);
+              final date = DateTime.parse(entry['created_at'].toString()).toLocal();
+              final actor = entry['actor_id']?.toString() ?? '';
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${before['name'] ?? ''} → ${after['name'] ?? ''}'),
+                subtitle: Text('সংস্করণ ${before['version']} → ${after['version']}\n'
+                  '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} '
+                  '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} · '
+                  'অ্যাকাউন্ট ${actor.length > 8 ? actor.substring(0, 8) : actor}'),
+              );
+            })),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('বন্ধ'))],
+      ));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ইতিহাস লোড হয়নি: $e')));
+    }
   }
 
   Future<List<Map<String, dynamic>>> _loadMembers() async {
@@ -738,8 +914,19 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.committeeName),
+      title: Row(children: [
+        if (_committeeLogoPath != null) ...[
+          CircleAvatar(radius: 15, backgroundImage: NetworkImage(
+            '${Supabase.instance.client.storage.from('committee-logos').getPublicUrl(_committeeLogoPath!)}?v=$_committeeVersion')),
+          const SizedBox(width: 8),
+        ],
+        Flexible(child: Text(_committeeName)),
+      ]),
       actions: [
+        if (_isCommitteeAdmin) IconButton(onPressed: _showCommitteeHistory,
+          icon: const Icon(Icons.history), tooltip: 'সমিতির পরিবর্তনের ইতিহাস'),
+        if (_isCommitteeAdmin) IconButton(onPressed: _savingCommittee ? null : _editCommittee,
+          icon: const Icon(Icons.edit_outlined), tooltip: 'সমিতির নাম ও লোগো সম্পাদনা'),
         IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
       ],
     ),
