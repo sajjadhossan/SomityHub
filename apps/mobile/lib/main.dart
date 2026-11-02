@@ -743,11 +743,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
       ],
     ),
-    floatingActionButton: _canManageMembers ? FloatingActionButton.extended(
-      onPressed: _addMember,
-      icon: const Icon(Icons.person_add_alt_1),
-      label: const Text('সদস্য যোগ করুন'),
-    ) : null,
+    floatingActionButton: null,
     body: FutureBuilder<List<Map<String, dynamic>>>(
       future: _members,
       builder: (context, snapshot) {
@@ -816,12 +812,26 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 ),
               ),
               const SizedBox(height: 12),
-              Card(child: ListTile(
-                leading: Icon(_isCommitteeAdmin ? Icons.admin_panel_settings : _canManageMembers ? Icons.manage_accounts : Icons.person_outline),
-                title: Text('এই সমিতিতে আপনার পদ: ${_roleLabel(_currentRole)}'),
-                subtitle: Text(_isCommitteeAdmin
-                    ? 'আপনি নতুন account যোগ করে তার পদ নির্ধারণ করতে পারবেন।'
-                    : _canManageMembers ? 'আপনি সদস্য পরিচালনা করতে পারবেন।' : 'সমিতির Admin আপনার পদ ও অনুমতি নির্ধারণ করেন।'),
+              Card(child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(_isCommitteeAdmin ? Icons.admin_panel_settings : _canManageMembers ? Icons.manage_accounts : Icons.person_outline),
+                    title: Text('এই সমিতিতে আপনার পদ: ${_roleLabel(_currentRole)}'),
+                    subtitle: Text(_isCommitteeAdmin
+                        ? 'আপনি account যোগ ও অন্য সদস্যের পদ নির্ধারণ করতে পারবেন।'
+                        : _canManageMembers
+                            ? 'আপনি সদস্য যোগ ও তথ্য পরিচালনা করতে পারবেন; পদ Admin নির্ধারণ করেন।'
+                            : 'এই Member account-এ account যোগ বা পদ বদলের অনুমতি নেই। Admin account দিয়ে login করুন।'),
+                  ),
+                  if (_canManageMembers)
+                    FilledButton.icon(
+                      onPressed: _savingMember ? null : _addMember,
+                      icon: const Icon(Icons.person_add_alt_1),
+                      label: Text(_isCommitteeAdmin ? 'নিবন্ধিত account যোগ করুন' : 'সাধারণ সদস্য যোগ করুন'),
+                    ),
+                ]),
               )),
               const SizedBox(height: 12),
               const Text('সদস্যসংখ্যার কোনো সীমা নেই। Member Code সিস্টেম থেকে স্বয়ংক্রিয়ভাবে তৈরি হয়।',
@@ -889,34 +899,31 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     if ((member['details']?['address'] ?? '').toString().isNotEmpty)
                       member['details']['address'].toString(),
                   ].join(' · ')),
-                  trailing: _canManageMembers ? PopupMenuButton<String>(
-                    tooltip: 'সদস্যের কাজ',
-                    onSelected: (action) {
-                      if (action == 'edit') _editMemberDetails(member);
-                      if (action == 'role') _changeMemberRole(member);
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'edit',
-                        enabled: _canManageMembers && !_savingMember,
-                        child: const ListTile(
-                          leading: Icon(Icons.edit_outlined),
-                          title: Text('সদস্যের তথ্য সম্পাদনা'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                  trailing: _canManageMembers ? Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (_isCommitteeAdmin && member['user_id'] != _currentUserId)
+                      IconButton.filledTonal(
+                        tooltip: 'পদ পরিবর্তন',
+                        onPressed: _savingMember ? null : () => _changeMemberRole(member),
+                        icon: const Icon(Icons.badge_outlined),
                       ),
-                      if (_isCommitteeAdmin && member['user_id'] != _currentUserId)
+                    PopupMenuButton<String>(
+                      tooltip: 'সদস্যের তথ্য',
+                      onSelected: (action) {
+                        if (action == 'edit') _editMemberDetails(member);
+                      },
+                      itemBuilder: (context) => [
                         PopupMenuItem(
-                          value: 'role',
+                          value: 'edit',
                           enabled: !_savingMember,
                           child: const ListTile(
-                            leading: Icon(Icons.admin_panel_settings_outlined),
-                            title: Text('Role পরিবর্তন'),
+                            leading: Icon(Icons.edit_outlined),
+                            title: Text('সদস্যের তথ্য সম্পাদনা'),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
-                    ],
-                  ) : null,
+                      ],
+                    ),
+                  ]) : null,
                 )),
             ],
           ),
