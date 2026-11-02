@@ -26,6 +26,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   List<Map<String, dynamic>> _members = [];
   List<Map<String, dynamic>> _assignments = [];
   List<Map<String, dynamic>> _loans = [];
+  List<Map<String, dynamic>> _repayments = [];
   List<Map<String, dynamic>> _vouchers = [];
   List<Map<String, dynamic>> _meetings = [];
   List<Map<String, dynamic>> _transactions = [];
@@ -77,6 +78,8 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
           'p_membership_id': _canFinance ? null : widget.membershipId,
           'p_limit': 100,
         }),
+        db.from('cooperative_loan_repayments').select('loan_id,amount,payment_date,reference_number')
+          .eq('organization_id', widget.organizationId),
       ]);
       if (!mounted) return;
       setState(() {
@@ -88,6 +91,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
         _meetings = List<Map<String, dynamic>>.from(results[5] as List);
         _transactions = List<Map<String, dynamic>>.from(results[6] as List);
         _receipts = List<Map<String, dynamic>>.from(results[7] as List);
+        _repayments = List<Map<String, dynamic>>.from(results[8] as List);
       });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -479,25 +483,34 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     );
   }
 
+  Widget _loanCard(Map<String, dynamic> r) {
+    final paid = _repayments.where((p) => p['loan_id'].toString() == r['id'].toString())
+      .fold<num>(0, (sum, p) => sum + ((p['amount'] as num?) ?? 0));
+    final totalDue = ((r['principal_amount'] as num?) ?? 0) *
+      (1 + ((r['interest_rate'] as num?) ?? 0) / 100);
+    final outstanding = totalDue - paid > 0 ? totalDue - paid : 0;
+    return Card(child: ListTile(
+      title: Text('${_memberCode(r['membership_id'])} · ৳${_money(r['principal_amount'])}'),
+      subtitle: Text('${r['purpose']}\n${_branchName(r['branch_id'])} · ${r['term_months']} মাস · Flat ${r['interest_rate']}% · ${r['status']}\nপরিশোধ: ৳${_money(paid)} · বকেয়া: ৳${_money(outstanding)}'),
+      isThreeLine: true,
+      trailing: PopupMenuButton<String>(onSelected: (v) {
+        if (v == 'approved' || v == 'rejected') _reviewLoan(r, v);
+        if (v == 'disburse') _disburseLoan(r);
+        if (v == 'repay') _repayLoan(r);
+      }, itemBuilder: (_) => [
+        if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
+        if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
+        if (_canProcessLoanCash && r['status'] == 'approved') const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
+        if (_canProcessLoanCash && r['status'] == 'disbursed') const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
+      ]),
+    ));
+  }
+
   Widget _loansView() => ListView(padding: const EdgeInsets.all(16), children: [
     if (!_canManage && !_canFinance) FilledButton.icon(onPressed: _createLoan, icon: const Icon(Icons.add), label: const Text('ঋণের আবেদন করুন')),
     if (_canReviewFinance) FilledButton.icon(onPressed: _createLoan, icon: const Icon(Icons.add), label: const Text('ঋণের আবেদন তৈরি করুন')),
     if (_loans.isEmpty) const ListTile(title: Text('কোনো ঋণের আবেদন নেই।')),
-    for (final r in _loans) Card(child: ListTile(
-      title: Text('${_memberCode(r['membership_id'])} · ৳${_money(r['principal_amount'])}'),
-      subtitle: Text('${r['purpose']}\n${_branchName(r['branch_id'])} · ${r['term_months']} মাস · Flat ${r['interest_rate']}% · ${r['status']}'),
-      isThreeLine: true,
-      trailing: PopupMenuButton<String>(onSelected: (v) {
-        if (v == 'approved' || v == 'rejected') _reviewLoan(r, v);
-        if (v == 'repay') _repayLoan(r);
-        if (v == 'disburse') _disburseLoan(r);
-      }, itemBuilder: (_) => [
-        if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
-        if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
-        if (_canReviewFinance && r['status'] == 'approved') const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
-        if (_canProcessLoanCash && r['status'] == 'disbursed') const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
-      ]),
-    )),
+    for (final r in _loans) _loanCard(r),
   ]);
 
   Widget _vouchersView() => ListView(padding: const EdgeInsets.all(16), children: [
