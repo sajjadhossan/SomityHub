@@ -126,8 +126,19 @@ jobs:
           flutter build macos --release --build-name="${{ steps.version.outputs.version }}" --build-number="${{ github.run_number }}" --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
           APP="build/macos/Build/Products/Release/app.app"
           test -d "$APP" || { echo "::error::macOS app bundle was not produced."; exit 1; }
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName SomityHub" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName SomityHub" "$APP/Contents/Info.plist"
+          python3 - "$APP/Contents/Info.plist" <<'PY'
+          import plistlib
+          import sys
+          from pathlib import Path
+
+          plist_path = Path(sys.argv[1])
+          with plist_path.open("rb") as source:
+              data = plistlib.load(source)
+          data["CFBundleName"] = "SomityHub"
+          data["CFBundleDisplayName"] = "SomityHub"
+          with plist_path.open("wb") as destination:
+              plistlib.dump(data, destination)
+          PY
           mkdir -p "$RUNNER_TEMP/package"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/package/SomityHub-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip"
 
