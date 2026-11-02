@@ -1,0 +1,1 @@
+revoke all on function public.disburse_cooperative_loan(uuid) from public,anon,authenticated;
