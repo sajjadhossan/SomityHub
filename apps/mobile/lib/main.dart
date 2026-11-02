@@ -1308,9 +1308,11 @@ class _FinancialWorkspacePageState extends State<FinancialWorkspacePage> {
       }
       await _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('অনুরোধ জমা হয়নি: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('অনুরোধ জমা হয়নি: $e')),
+        );
+      }
     } finally {
       amount.dispose();
       description.dispose();
@@ -1351,9 +1353,11 @@ class _FinancialWorkspacePageState extends State<FinancialWorkspacePage> {
       );
       await _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Review সম্পন্ন হয়নি: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Review সম্পন্ন হয়নি: $e')),
+        );
+      }
     } finally {
       note.dispose();
       if (mounted) setState(() => _saving = false);
