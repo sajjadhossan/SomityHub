@@ -1628,7 +1628,11 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
       String? photoUrl;
       final photoPath = details?['photo_path']?.toString();
       if (photoPath != null && photoPath.isNotEmpty) {
-        photoUrl = await client.storage.from('member-photos').createSignedUrl(photoPath, 3600);
+        try {
+          photoUrl = await client.storage.from('member-photos').createSignedUrl(photoPath, 3600);
+        } catch (_) {
+          photoUrl = null;
+        }
       }
       if (mounted) {
         setState(() {
