@@ -124,7 +124,7 @@ class _MultiBranchMemberAssignmentPageState extends State<MultiBranchMemberAssig
           const Text('Primary branch', style: TextStyle(fontWeight: FontWeight.bold)),
           RadioGroup<String>(
             groupValue: _primary,
-            onChanged: _saving ? null : (v) => setState(() => _primary = v),
+            onChanged: (v) { if (!_saving && v != null) setState(() => _primary = v); },
             child: Column(children: [
               for (final b in _branches.where((b) => _selected.contains(b['id'].toString())))
                 RadioListTile<String>(
