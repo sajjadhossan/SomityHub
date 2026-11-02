@@ -134,7 +134,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             validator: (v) { final n = num.tryParse(v ?? ''); return n == null || n < 0 || n > 100 ? '০–১০০ এর মধ্যে দিন।' : null; }),
           TextFormField(controller: months, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'মেয়াদ (মাস)'),
             validator: (v) { final n = int.tryParse(v ?? ''); return n == null || n < 1 || n > 600 ? '১–৬০০ মাসের মধ্যে দিন।' : null; }),
-          DropdownButtonFormField<String>(value: branch, decoration: const InputDecoration(labelText: 'শাখা'),
+          DropdownButtonFormField<String>(initialValue: branch, decoration: const InputDecoration(labelText: 'শাখা'),
             items: [for (final b in _branches) DropdownMenuItem(value: b['id'].toString(), child: Text(b['name'].toString()))],
             onChanged: (v) => setDialog(() => branch = v ?? branch)),
           TextFormField(controller: purpose, maxLines: 3, decoration: const InputDecoration(labelText: 'ঋণের উদ্দেশ্য'),
@@ -235,7 +235,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
         content: Form(key: form, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextFormField(controller: number, decoration: const InputDecoration(labelText: 'ভাউচার নম্বর'),
             validator: (v) => (v?.trim().isEmpty ?? true) ? 'নম্বর দিন।' : null),
-          DropdownButtonFormField<String>(value: type, decoration: const InputDecoration(labelText: 'ধরন'),
+          DropdownButtonFormField<String>(initialValue: type, decoration: const InputDecoration(labelText: 'ধরন'),
             items: const [DropdownMenuItem(value: 'income', child: Text('আয়')), DropdownMenuItem(value: 'expense', child: Text('ব্যয়'))],
             onChanged: (v) => setDialog(() => type = v ?? type)),
           TextFormField(controller: category, decoration: const InputDecoration(labelText: 'খাত'),
@@ -301,7 +301,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             subtitle: Text(starts.toLocal().toString().substring(0, 16)),
             trailing: IconButton(icon: const Icon(Icons.calendar_month), onPressed: () async {
               final d = await showDatePicker(context: ctx, initialDate: starts, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 3650)));
-              if (d == null) return;
+              if (d == null || !ctx.mounted) return;
               final t = await showTimePicker(context: ctx, initialTime: TimeOfDay.fromDateTime(starts));
               if (t != null) setDialog(() => starts = DateTime(d.year, d.month, d.day, t.hour, t.minute));
             })),
@@ -373,8 +373,10 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
                   'membership_id': m['id'], 'attendance_status': existing[m['id'].toString()]?['attendance_status'] ?? 'present',
                   'marked_by': Supabase.instance.client.auth.currentUser!.id,
                 }).toList();
-                if (payload.isNotEmpty) await Supabase.instance.client.from('cooperative_attendance')
-                  .upsert(payload, onConflict: 'meeting_id,membership_id');
+                if (payload.isNotEmpty) {
+                  await Supabase.instance.client.from('cooperative_attendance')
+                    .upsert(payload, onConflict: 'meeting_id,membership_id');
+                }
                 if (ctx.mounted) Navigator.pop(ctx);
                 await _load();
               } catch (e) { await _messageError(e); }
