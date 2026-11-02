@@ -1288,10 +1288,10 @@ class MemberIdCardPage extends StatelessWidget {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
-                      CircleAvatar(
+                      const CircleAvatar(
                         radius: 38,
-                        backgroundColor: const Color(0xFFE8F2EF),
-                        child: const Icon(Icons.person, size: 44, color: Color(0xFF126B55)),
+                        backgroundColor: Color(0xFFE8F2EF),
+                        child: Icon(Icons.person, size: 44, color: Color(0xFF126B55)),
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -1419,10 +1419,12 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
           .maybeSingle();
 
       if (membership == null) {
-        if (mounted) setState(() {
-          _completed = true;
-          _error = 'এই Member ID পাওয়া যায়নি অথবা যাচাইয়ের অনুমতি নেই।';
-        });
+        if (mounted) {
+          setState(() {
+            _completed = true;
+            _error = 'এই Member ID পাওয়া যায়নি অথবা যাচাইয়ের অনুমতি নেই।';
+          });
+        }
         return;
       }
 
@@ -1434,19 +1436,23 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
       ]);
       final profile = results[0] as Map<String, dynamic>?;
       final organization = results[1] as Map<String, dynamic>?;
-      if (mounted) setState(() {
-        _completed = true;
-        _verifiedMember = {
-          ...membership,
-          'display_name': profile?['display_name']?.toString() ?? 'সদস্য',
-          'organization_name': organization?['name']?.toString() ?? 'সমিতি',
-        };
-      });
+      if (mounted) {
+        setState(() {
+          _completed = true;
+          _verifiedMember = {
+            ...membership,
+            'display_name': profile?['display_name']?.toString() ?? 'সদস্য',
+            'organization_name': organization?['name']?.toString() ?? 'সমিতি',
+          };
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() {
-        _completed = true;
-        _error = 'QR Code সঠিক নয় অথবা server থেকে পরিচয় যাচাই করা যায়নি।';
-      });
+      if (mounted) {
+        setState(() {
+          _completed = true;
+          _error = 'QR Code সঠিক নয় অথবা server থেকে পরিচয় যাচাই করা যায়নি।';
+        });
+      }
     } finally {
       if (mounted) setState(() => _processing = false);
     }
