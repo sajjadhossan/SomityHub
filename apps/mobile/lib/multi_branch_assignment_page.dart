@@ -56,7 +56,8 @@ class _MultiBranchMemberAssignmentPageState extends State<MultiBranchMemberAssig
     _selected
       ..clear()
       ..addAll(rows.map((a) => a['branch_id'].toString()));
-    _primary = rows.where((a) => a['is_primary'] == true).map((a) => a['branch_id'].toString()).firstOrNull;
+    final primaryRows = rows.where((a) => a['is_primary'] == true).toList();
+    _primary = primaryRows.isEmpty ? null : primaryRows.first['branch_id'].toString();
     if (_primary == null && _selected.isNotEmpty) _primary = _selected.first;
   }
 
