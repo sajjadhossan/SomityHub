@@ -5,6 +5,8 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -490,6 +492,47 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     _committeeLogoPath = widget.logoPath;
     _committeeVersion = widget.version;
     _members = _loadMembers();
+  }
+
+  Future<void> _openMemberCard(Map<String, dynamic> member) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => MemberIdCardPage(
+        member: member,
+        organizationId: widget.organizationId,
+        committeeName: _committeeName,
+        logoPath: _committeeLogoPath,
+      ),
+    ));
+  }
+
+  Future<void> _openMyMemberCard() async {
+    try {
+      final members = await _members;
+      final member = members.firstWhere(
+        (item) => item['id'].toString() == _currentMembershipId,
+      );
+      if (!mounted) return;
+      await _openMemberCard(member);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('আপনার Member ID Card খোলা যায়নি: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openQrScanner() async {
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('QR Scanner এই Desktop platform-এ এখনো supported নয়।')),
+      );
+      return;
+    }
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const MemberQrVerificationPage(),
+    ));
   }
 
   Future<void> _editCommittee() async {
@@ -1015,6 +1058,18 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                             ? 'আপনি সদস্য যোগ ও তথ্য পরিচালনা করতে পারবেন; পদ Admin নির্ধারণ করেন।'
                             : 'এই Member account-এ account যোগ বা পদ বদলের অনুমতি নেই। Admin account দিয়ে login করুন।'),
                   ),
+                  FilledButton.icon(
+                    onPressed: _openMyMemberCard,
+                    icon: const Icon(Icons.badge_outlined),
+                    label: const Text('আমার Member ID Card'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openQrScanner,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('QR Code যাচাই করুন'),
+                  ),
+                  const SizedBox(height: 10),
                   if (_canManageMembers)
                     FilledButton.icon(
                       onPressed: _savingMember ? null : _addMember,
@@ -1084,6 +1139,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 )),
               for (final member in members)
                 Card(child: ListTile(
+                  onTap: () => _openMemberCard(member),
                   leading: CircleAvatar(
                     child: Icon(member['role'] == 'committee_admin'
                         ? Icons.admin_panel_settings_outlined
@@ -1136,6 +1192,379 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   );
 }
 
+
+class MemberIdCardPage extends StatelessWidget {
+  const MemberIdCardPage({
+    super.key,
+    required this.member,
+    required this.organizationId,
+    required this.committeeName,
+    required this.logoPath,
+  });
+
+  final Map<String, dynamic> member;
+  final String organizationId;
+  final String committeeName;
+  final String? logoPath;
+
+  String get _roleLabel {
+    const roles = <String, String>{
+      'committee_admin': 'অ্যাডমিন',
+      'manager': 'ম্যানেজার',
+      'president': 'সভাপতি',
+      'general_secretary': 'সাধারণ সম্পাদক',
+      'assistant_secretary': 'সহকারী সম্পাদক',
+      'accountant': 'হিসাবরক্ষক',
+      'treasurer': 'কোষাধ্যক্ষ',
+      'secretary': 'সেক্রেটারি',
+      'auditor': 'অডিটর',
+      'member': 'সাধারণ সদস্য',
+    };
+    return roles[member['role']?.toString()] ?? 'সাধারণ সদস্য';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final memberId = member['id']?.toString() ?? '';
+    final memberCode = member['member_code']?.toString() ?? '—';
+    final displayName = member['display_name']?.toString().trim();
+    final isActive = member['is_active'] == true;
+    final details = member['details'] as Map<String, dynamic>?;
+    final phone = details?['phone']?.toString() ?? '';
+    final logoUrl = logoPath == null
+        ? null
+        : Supabase.instance.client.storage.from('committee-logos').getPublicUrl(logoPath!);
+    final qrData = jsonEncode({
+      'app': 'somityhub',
+      'v': 1,
+      'organization_id': organizationId,
+      'membership_id': memberId,
+    });
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Digital Member ID Card')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF0D5948), Color(0xFF16866A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      if (logoUrl != null)
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.white,
+                          backgroundImage: NetworkImage(logoUrl),
+                        )
+                      else
+                        const CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.white,
+                          child: Icon(Icons.groups_rounded, size: 34, color: Color(0xFF126B55)),
+                        ),
+                      const SizedBox(height: 12),
+                      const Text('SOMITYHUB MEMBER',
+                        style: TextStyle(color: Colors.white70, letterSpacing: 1.5, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      Text(committeeName,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 38,
+                        backgroundColor: const Color(0xFFE8F2EF),
+                        child: const Icon(Icons.person, size: 44, color: Color(0xFF126B55)),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        displayName == null || displayName.isEmpty ? 'সদস্য' : displayName,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(_roleLabel, style: const TextStyle(color: Colors.black54)),
+                      const SizedBox(height: 18),
+                      _MemberIdField(label: 'MEMBER ID', value: memberCode),
+                      if (phone.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _MemberIdField(label: 'MOBILE', value: phone),
+                      ],
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: const Color(0xFFE1E8E5)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: QrImageView(
+                          data: qrData,
+                          version: QrVersions.auto,
+                          size: 176,
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('পরিচয় যাচাই করতে SomityHub অ্যাপ দিয়ে QR Code scan করুন।',
+                        textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, fontSize: 12)),
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isActive ? const Color(0xFFE5F4EC) : const Color(0xFFFCE8E6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          isActive ? 'ACTIVE MEMBER' : 'INACTIVE MEMBER',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: isActive ? const Color(0xFF176B43) : const Color(0xFFB3261E),
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'QR Code-এ শুধু committee ও membership reference থাকে। ব্যক্তিগত বা আর্থিক তথ্য QR-এর মধ্যে রাখা হয় না; যাচাইয়ের সময় server থেকে status দেখা হয়।',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemberIdField extends StatelessWidget {
+  const _MemberIdField({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF5F7F6),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.black54, letterSpacing: 1)),
+        const SizedBox(height: 3),
+        Text(value, textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+      ],
+    ),
+  );
+}
+
+class MemberQrVerificationPage extends StatefulWidget {
+  const MemberQrVerificationPage({super.key});
+
+  @override
+  State<MemberQrVerificationPage> createState() => _MemberQrVerificationPageState();
+}
+
+class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
+  bool _processing = false;
+  bool _completed = false;
+  Map<String, dynamic>? _verifiedMember;
+  String? _error;
+
+  Future<void> _verifyCode(String rawValue) async {
+    if (_processing || _completed) return;
+    setState(() { _processing = true; _error = null; });
+    try {
+      final decoded = jsonDecode(rawValue);
+      if (decoded is! Map) throw const FormatException('Invalid QR data');
+      final payload = Map<String, dynamic>.from(decoded);
+      if (payload['app'] != 'somityhub' || payload['v'] != 1 ||
+          payload['organization_id'] is! String || payload['membership_id'] is! String) {
+        throw const FormatException('Unsupported QR code');
+      }
+
+      final client = Supabase.instance.client;
+      final membership = await client.from('committee_memberships')
+          .select('id, user_id, member_code, role, is_active, joined_at')
+          .eq('organization_id', payload['organization_id'] as String)
+          .eq('id', payload['membership_id'] as String)
+          .maybeSingle();
+
+      if (membership == null) {
+        if (mounted) setState(() {
+          _completed = true;
+          _error = 'এই Member ID পাওয়া যায়নি অথবা যাচাইয়ের অনুমতি নেই।';
+        });
+        return;
+      }
+
+      final results = await Future.wait<dynamic>([
+        client.from('profiles').select('display_name')
+          .eq('id', membership['user_id'].toString()).maybeSingle(),
+        client.from('organizations').select('name')
+          .eq('id', payload['organization_id'] as String).maybeSingle(),
+      ]);
+      final profile = results[0] as Map<String, dynamic>?;
+      final organization = results[1] as Map<String, dynamic>?;
+      if (mounted) setState(() {
+        _completed = true;
+        _verifiedMember = {
+          ...membership,
+          'display_name': profile?['display_name']?.toString() ?? 'সদস্য',
+          'organization_name': organization?['name']?.toString() ?? 'সমিতি',
+        };
+      });
+    } catch (_) {
+      if (mounted) setState(() {
+        _completed = true;
+        _error = 'QR Code সঠিক নয় অথবা server থেকে পরিচয় যাচাই করা যায়নি।';
+      });
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  void _scanAgain() {
+    setState(() {
+      _completed = false;
+      _verifiedMember = null;
+      _error = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final member = _verifiedMember;
+    final isActive = member?['is_active'] == true;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Member QR Verification')),
+      body: Column(
+        children: [
+          Expanded(
+            child: _completed
+                ? Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                member == null ? Icons.error_outline :
+                                  isActive ? Icons.verified_rounded : Icons.gpp_bad_outlined,
+                                size: 64,
+                                color: member == null ? Colors.red :
+                                  isActive ? Colors.green : Colors.red,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                member == null ? 'যাচাই করা যায়নি' :
+                                  isActive ? 'পরিচয় যাচাই সফল' : 'সদস্য নিষ্ক্রিয়',
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              ),
+                              if (_error != null) ...[
+                                const SizedBox(height: 8),
+                                Text(_error!, textAlign: TextAlign.center),
+                              ],
+                              if (member != null) ...[
+                                const SizedBox(height: 16),
+                                Text(member['display_name'].toString(),
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                                Text('Member ID: ${member['member_code'] ?? '—'}'),
+                                Text(member['organization_name'].toString()),
+                                Text('Status: ${isActive ? 'Active' : 'Inactive'}'),
+                              ],
+                              const SizedBox(height: 20),
+                              FilledButton.icon(
+                                onPressed: _scanAgain,
+                                icon: const Icon(Icons.qr_code_scanner),
+                                label: const Text('আরেকটি QR Scan করুন'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      MobileScanner(onDetect: (capture) {
+                        if (capture.barcodes.isEmpty) return;
+                        final value = capture.barcodes.first.rawValue;
+                        if (value != null && value.isNotEmpty) _verifyCode(value);
+                      }),
+                      const Align(
+                        alignment: Alignment.center,
+                        child: SizedBox(
+                          width: 250,
+                          height: 250,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.fromBorderSide(BorderSide(color: Colors.white, width: 3)),
+                              borderRadius: BorderRadius.all(Radius.circular(18)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_processing)
+                        const Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Card(child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                                SizedBox(width: 12),
+                                Text('পরিচয় যাচাই হচ্ছে...'),
+                              ]),
+                            )),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('সদস্যের ID Card-এর QR Code ক্যামেরার সামনে ধরুন।',
+              textAlign: TextAlign.center),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class FinancialWorkspacePage extends StatefulWidget {
   const FinancialWorkspacePage({
