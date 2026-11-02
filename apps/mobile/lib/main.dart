@@ -380,9 +380,30 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   final _searchController = TextEditingController();
   String _statusFilter = 'all';
   String _currentUserId = '';
+  String _currentRole = 'member';
   bool _canManageMembers = false;
   bool _isCommitteeAdmin = false;
   bool _savingMember = false;
+
+  static const _committeeRoles = <(String, String)>[
+    ('committee_admin', 'অ্যাডমিন'),
+    ('manager', 'ম্যানেজার'),
+    ('president', 'সভাপতি'),
+    ('general_secretary', 'সাধারণ সম্পাদক'),
+    ('assistant_secretary', 'সহকারী সম্পাদক'),
+    ('accountant', 'হিসাবরক্ষক'),
+    ('treasurer', 'কোষাধ্যক্ষ'),
+    ('secretary', 'সেক্রেটারি'),
+    ('auditor', 'অডিটর'),
+    ('member', 'সাধারণ সদস্য'),
+  ];
+
+  String _roleLabel(Object? role) {
+    for (final entry in _committeeRoles) {
+      if (entry.$1 == role?.toString()) return entry.$2;
+    }
+    return 'সাধারণ সদস্য';
+  }
 
   @override
   void dispose() {
@@ -409,12 +430,21 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     final members = List<Map<String, dynamic>>.from(rows);
     final actorRows = members.where((member) =>
         member['user_id'] == user.id && member['is_active'] == true).toList();
-    if (actorRows.isEmpty ||
-        !['committee_admin', 'manager'].contains(actorRows.first['role'])) {
-      throw Exception('এই Committee পরিচালনার জন্য Admin বা Manager permission প্রয়োজন।');
+    if (actorRows.isEmpty) {
+      throw Exception('এই account-টি এই সমিতির সদস্য নয়। Admin-এর কাছে account যোগ করতে বলুন।');
     }
     _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
-    _canManageMembers = true;
+    _currentRole = actorRows.first['role']?.toString() ?? 'member';
+    _canManageMembers = _isCommitteeAdmin || actorRows.first['role'] == 'manager';
+
+    final profileIds = members.map((member) => member['user_id'].toString()).toSet().toList();
+    if (profileIds.isNotEmpty) {
+      final profiles = await client.from('profiles').select('id, display_name').inFilter('id', profileIds);
+      final names = {for (final row in profiles) row['id'].toString(): row['display_name']?.toString()};
+      for (final member in members) {
+        member['display_name'] = names[member['user_id'].toString()];
+      }
+    }
 
     final details = await client.from('member_details')
         .select('membership_id, phone, address, date_of_birth, emergency_contact, notes')
@@ -560,20 +590,12 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
 
   Future<void> _changeMemberRole(Map<String, dynamic> member) async {
     if (!_isCommitteeAdmin || member['user_id'] == _currentUserId) return;
-    const roles = [
-      ('committee_admin', 'Committee Admin'),
-      ('manager', 'Manager'),
-      ('treasurer', 'Treasurer'),
-      ('secretary', 'Secretary'),
-      ('auditor', 'Auditor'),
-      ('member', 'Member'),
-    ];
     final newRole = await showDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: Text('${member['member_code']} · Role নির্বাচন করুন'),
+        title: Text('${member['display_name'] ?? member['member_code']} · পদ নির্বাচন করুন'),
         children: [
-          for (final role in roles)
+          for (final role in _committeeRoles)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(dialogContext, role.$1),
               child: Text(role.$2),
@@ -586,7 +608,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Role পরিবর্তন করবেন?'),
-        content: Text('${member['member_code']}-এর role ${member['role']} থেকে $newRole করা হবে।'),
+        content: Text('${member['display_name'] ?? member['member_code']}-এর পদ ${_roleLabel(member['role'])} থেকে ${_roleLabel(newRole)} করা হবে।'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
           FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('পরিবর্তন করুন')),
@@ -605,7 +627,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${member['member_code']}-এর role আপডেট হয়েছে।'),
+          content: Text('${member['display_name'] ?? member['member_code']}-এর পদ ${_roleLabel(newRole)} করা হয়েছে।'),
         ));
       }
     } catch (e) {
@@ -621,30 +643,40 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
 
   Future<void> _addMember() async {
     final formKey = GlobalKey<FormState>();
-    final userId = TextEditingController();
+    final email = TextEditingController();
     final phone = TextEditingController();
     final address = TextEditingController();
+    var selectedRole = 'member';
     final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('নতুন সদস্য যোগ করুন'),
-        content: Form(
+        title: const Text('সমিতিতে account যোগ করুন'),
+        content: StatefulBuilder(builder: (context, setDialogState) => Form(
           key: formKey,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('সদস্যের আগে থেকে SomityHub account থাকতে হবে। তার Account UUID প্রয়োজন।'),
+                const Text('ব্যক্তিকে আগে SomityHub-এ account খুলে একবার login করতে বলুন। Registration-এর email দিন।'),
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: userId,
-                  decoration: const InputDecoration(labelText: 'User UUID'),
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Account-এর Email'),
                   validator: (value) {
                     final v = value?.trim() ?? '';
-                    final uuid = RegExp(r'^[0-9a-fA-F-]{36}$');
-                    return uuid.hasMatch(v) ? null : 'সঠিক User UUID দিন।';
+                    return v.contains('@') ? null : 'Registration-এ ব্যবহার করা email দিন।';
                   },
                 ),
+                if (_isCommitteeAdmin) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedRole,
+                    decoration: const InputDecoration(labelText: 'সমিতির পদ'),
+                    items: [for (final role in _committeeRoles) DropdownMenuItem(value: role.$1, child: Text(role.$2))],
+                    onChanged: (value) => setDialogState(() => selectedRole = value ?? 'member'),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(controller: phone, decoration: const InputDecoration(labelText: 'মোবাইল (ঐচ্ছিক)')),
                 const SizedBox(height: 12),
@@ -652,7 +684,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
               ],
             ),
           ),
-        ),
+        )),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
           FilledButton(
@@ -668,16 +700,17 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     );
 
     if (accepted != true || !mounted) {
-      userId.dispose();
+      email.dispose();
       phone.dispose();
       address.dispose();
       return;
     }
 
     try {
-      final result = await Supabase.instance.client.rpc('add_committee_member', params: {
+      final result = await Supabase.instance.client.rpc('add_committee_member_by_email', params: {
         'p_organization_id': widget.organizationId,
-        'p_user_id': userId.text.trim(),
+        'p_email': email.text.trim(),
+        'p_role': _isCommitteeAdmin ? selectedRole : 'member',
         'p_phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
         'p_address': address.text.trim().isEmpty ? null : address.text.trim(),
       });
@@ -686,7 +719,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(code == null ? 'সদস্য যোগ হয়েছে।' : 'সদস্য যোগ হয়েছে। Member Code: $code'),
+          content: Text(code == null ? 'সমিতিতে account যোগ হয়েছে।' : 'সমিতিতে account যোগ হয়েছে। Member Code: $code'),
         ));
       }
     } catch (e) {
@@ -696,7 +729,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         ));
       }
     } finally {
-      userId.dispose();
+      email.dispose();
       phone.dispose();
       address.dispose();
     }
@@ -742,7 +775,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
           if (query.isEmpty) return true;
           final details = member['details'] as Map<String, dynamic>?;
           final searchable = [
-            member['member_code'], member['role'], details?['phone'], details?['address'],
+            member['display_name'], member['member_code'], _roleLabel(member['role']), details?['phone'], details?['address'],
             details?['date_of_birth'], details?['emergency_contact'], details?['notes'],
           ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
           return searchable.contains(query);
@@ -783,6 +816,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 ),
               ),
               const SizedBox(height: 12),
+              Card(child: ListTile(
+                leading: Icon(_isCommitteeAdmin ? Icons.admin_panel_settings : _canManageMembers ? Icons.manage_accounts : Icons.person_outline),
+                title: Text('এই সমিতিতে আপনার পদ: ${_roleLabel(_currentRole)}'),
+                subtitle: Text(_isCommitteeAdmin
+                    ? 'আপনি নতুন account যোগ করে তার পদ নির্ধারণ করতে পারবেন।'
+                    : _canManageMembers ? 'আপনি সদস্য পরিচালনা করতে পারবেন।' : 'সমিতির Admin আপনার পদ ও অনুমতি নির্ধারণ করেন।'),
+              )),
+              const SizedBox(height: 12),
               const Text('সদস্যসংখ্যার কোনো সীমা নেই। Member Code সিস্টেম থেকে স্বয়ংক্রিয়ভাবে তৈরি হয়।',
                 style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 8),
@@ -792,7 +833,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   labelText: 'সদস্য খুঁজুন',
-                  hintText: 'Member Code, মোবাইল, ঠিকানা বা অন্যান্য তথ্য',
+                  hintText: 'নাম, Member Code, পদ, মোবাইল বা ঠিকানা',
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: _searchController.text.isEmpty ? null : IconButton(
                     tooltip: 'মুছে ফেলুন',
@@ -831,18 +872,24 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
               for (final member in members)
                 Card(child: ListTile(
                   leading: CircleAvatar(
-                    child: Text((member['member_code']?.toString().startsWith('ADM-') ?? false) ? 'A' : 'M'),
+                    child: Icon(member['role'] == 'committee_admin'
+                        ? Icons.admin_panel_settings_outlined
+                        : member['role'] == 'manager'
+                            ? Icons.manage_accounts_outlined
+                            : Icons.person_outline),
                   ),
-                  title: Text(member['member_code']?.toString() ?? 'Member'),
+                  title: Text(member['display_name']?.toString().isNotEmpty == true
+                      ? member['display_name'].toString()
+                      : member['member_code']?.toString() ?? 'সদস্য'),
                   subtitle: Text([
-                    member['role']?.toString() ?? 'member',
+                    '${_roleLabel(member['role'])} · ${member['member_code'] ?? ''}',
                     member['is_active'] == true ? 'সক্রিয়' : 'নিষ্ক্রিয়',
                     if ((member['details']?['phone'] ?? '').toString().isNotEmpty)
                       member['details']['phone'].toString(),
                     if ((member['details']?['address'] ?? '').toString().isNotEmpty)
                       member['details']['address'].toString(),
                   ].join(' · ')),
-                  trailing: PopupMenuButton<String>(
+                  trailing: _canManageMembers ? PopupMenuButton<String>(
                     tooltip: 'সদস্যের কাজ',
                     onSelected: (action) {
                       if (action == 'edit') _editMemberDetails(member);
@@ -869,7 +916,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                           ),
                         ),
                     ],
-                  ),
+                  ) : null,
                 )),
             ],
           ),
