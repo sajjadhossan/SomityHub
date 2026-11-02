@@ -1302,10 +1302,10 @@ class MemberIdCardPage extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(_roleLabel, style: const TextStyle(color: Colors.black54)),
                       const SizedBox(height: 18),
-                      _MemberIdField(label: 'MEMBER ID', value: memberCode),
+                      const _MemberIdField(label: 'MEMBER ID', value: memberCode),
                       if (phone.isNotEmpty) ...[
                         const SizedBox(height: 10),
-                        _MemberIdField(label: 'MOBILE', value: phone),
+                        const _MemberIdField(label: 'MOBILE', value: phone),
                       ],
                       const SizedBox(height: 18),
                       Container(
@@ -1400,11 +1400,15 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
   String? _error;
 
   Future<void> _verifyCode(String rawValue) async {
-    if (_processing || _completed) return;
+    if (_processing || _completed) {
+      return;
+    }
     setState(() { _processing = true; _error = null; });
     try {
       final decoded = jsonDecode(rawValue);
-      if (decoded is! Map) throw const FormatException('Invalid QR data');
+      if (decoded is! Map) {
+        throw const FormatException('Invalid QR data');
+      }
       final payload = Map<String, dynamic>.from(decoded);
       if (payload['app'] != 'somityhub' || payload['v'] != 1 ||
           payload['organization_id'] is! String || payload['membership_id'] is! String) {
