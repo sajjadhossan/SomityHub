@@ -82,7 +82,7 @@ jobs:
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           content = manifest.read_text(encoding="utf-8")
           if 'android:scheme="somityhub"' not in content:
-              activity = re.search(r'<activity\\b(?=[^>]*android:name="[^"]*MainActivity")[^>]*>', content)
+              activity = re.search(r'<activity[^>]*MainActivity[^>]*>', content)
               if not activity:
                   raise SystemExit("MainActivity declaration was not found.")
               intent_filter = '''
