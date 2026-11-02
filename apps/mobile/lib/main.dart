@@ -367,6 +367,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   late Future<List<Map<String, dynamic>>> _members;
   final _searchController = TextEditingController();
   String _statusFilter = 'all';
+  String _currentUserId = '';
+  bool _canManageMembers = false;
+  bool _isCommitteeAdmin = false;
+  bool _savingMember = false;
 
   @override
   void dispose() {
@@ -382,11 +386,21 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
 
   Future<List<Map<String, dynamic>>> _loadMembers() async {
     final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) throw Exception('Login session পাওয়া যায়নি।');
+    _currentUserId = user.id;
     final rows = await client.from('committee_memberships')
         .select('id, user_id, member_code, role, is_active, joined_at')
         .eq('organization_id', widget.organizationId)
         .order('joined_at', ascending: false);
     final members = List<Map<String, dynamic>>.from(rows);
+    final actorRows = members.where((member) =>
+        member['user_id'] == user.id && member['is_active'] == true).toList();
+    if (actorRows.isEmpty || !['committee_admin', 'manager'].contains(actorRows.first['role'])) {
+      throw Exception('এই Committee পরিচালনার জন্য Admin বা Manager permission প্রয়োজন।');
+    }
+    _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
+    _canManageMembers = true;
     final details = await client.from('member_details')
         .select('membership_id, phone, address')
         .eq('organization_id', widget.organizationId);
@@ -488,44 +502,60 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     }
   }
 
-  Future<void> _setMemberActive(Map<String, dynamic> member, bool active) async {
+  Future<void> _changeMemberRole(Map<String, dynamic> member) async {
+    if (!_isCommitteeAdmin || member['user_id'] == _currentUserId) return;
+    const roles = [
+      ('committee_admin', 'Committee Admin'), ('manager', 'Manager'),
+      ('treasurer', 'Treasurer'), ('secretary', 'Secretary'),
+      ('auditor', 'Auditor'), ('member', 'Member'),
+    ];
+    final newRole = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text('${member['member_code']} · Role নির্বাচন করুন'),
+        children: [
+          for (final role in roles)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, role.$1),
+              child: Text(role.$2),
+            ),
+        ],
+      ),
+    );
+    if (newRole == null || newRole == member['role'] || !mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(active ? 'সদস্য সক্রিয় করবেন?' : 'সদস্য নিষ্ক্রিয় করবেন?'),
-        content: Text(
-          '${member['member_code'] ?? 'এই সদস্য'}-কে ${active ? 'আবার সক্রিয়' : 'নিষ্ক্রিয়'} করা হবে।',
-        ),
+        title: const Text('Role পরিবর্তন করবেন?'),
+        content: Text('${member['member_code']}-এর role ${member['role']} থেকে $newRole করা হবে।'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(active ? 'সক্রিয় করুন' : 'নিষ্ক্রিয় করুন'),
-          ),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('পরিবর্তন করুন')),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
-
+    setState(() => _savingMember = true);
     try {
-      await Supabase.instance.client.from('committee_memberships')
-          .update({'is_active': active})
-          .eq('id', member['id'])
-          .eq('organization_id', widget.organizationId)
-          .select('id')
-          .single();
+      await Supabase.instance.client.rpc('admin_update_committee_member_role', params: {
+        'p_organization_id': widget.organizationId,
+        'p_membership_id': member['id'],
+        'p_new_role': newRole,
+      });
       _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(active ? 'সদস্য সক্রিয় হয়েছে।' : 'সদস্য নিষ্ক্রিয় হয়েছে।'),
+          content: Text('${member['member_code']}-এর role আপডেট হয়েছে।'),
         ));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('সদস্যের অবস্থা বদলানো যায়নি: $e')),
+          SnackBar(content: Text('Role আপডেট করা যায়নি: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _savingMember = false);
     }
   }
 
@@ -620,11 +650,11 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
       ],
     ),
-    floatingActionButton: FloatingActionButton.extended(
+    floatingActionButton: _canManageMembers ? FloatingActionButton.extended(
       onPressed: _addMember,
       icon: const Icon(Icons.person_add_alt_1),
       label: const Text('সদস্য যোগ করুন'),
-    ),
+    ) : null,
     body: FutureBuilder<List<Map<String, dynamic>>>(
       future: _members,
       builder: (context, snapshot) {
@@ -757,31 +787,28 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     tooltip: 'সদস্যের কাজ',
                     onSelected: (action) {
                       if (action == 'edit') _editMemberDetails(member);
-                      if (action == 'toggle') {
-                        _setMemberActive(member, member['is_active'] != true);
-                      }
+                      if (action == 'role') _changeMemberRole(member);
                     },
                     itemBuilder: (context) => [
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'edit',
-                        child: ListTile(
+                        enabled: _canManageMembers && !_savingMember,
+                        child: const ListTile(
                           leading: Icon(Icons.edit_outlined),
                           title: Text('ফোন ও ঠিকানা সম্পাদনা'),
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                      PopupMenuItem(
-                        value: 'toggle',
-                        child: ListTile(
-                          leading: Icon(member['is_active'] == true
-                              ? Icons.person_off_outlined
-                              : Icons.person_add_alt_1),
-                          title: Text(member['is_active'] == true
-                              ? 'নিষ্ক্রিয় করুন'
-                              : 'আবার সক্রিয় করুন'),
-                          contentPadding: EdgeInsets.zero,
+                      if (_isCommitteeAdmin && member['user_id'] != _currentUserId)
+                        PopupMenuItem(
+                          value: 'role',
+                          enabled: !_savingMember,
+                          child: const ListTile(
+                            leading: Icon(Icons.admin_panel_settings_outlined),
+                            title: Text('Role পরিবর্তন'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 )),
