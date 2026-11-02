@@ -479,6 +479,30 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     return 'সাধারণ সদস্য';
   }
 
+  static const _membershipStatuses = <(String, String)>[
+    ('active', 'সক্রিয়'),
+    ('pending', 'অনুমোদনের অপেক্ষায়'),
+    ('suspended', 'স্থগিত'),
+    ('expired', 'মেয়াদোত্তীর্ণ'),
+  ];
+
+  String _membershipStatusLabel(Object? status) {
+    for (final entry in _membershipStatuses) {
+      if (entry.$1 == status?.toString()) return entry.$2;
+    }
+    return 'অজানা';
+  }
+
+  Color _membershipStatusColor(Object? status) {
+    switch (status?.toString()) {
+      case 'active': return Colors.green;
+      case 'pending': return Colors.orange;
+      case 'suspended':
+      case 'expired': return Colors.red;
+      default: return Colors.grey;
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -531,7 +555,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       return;
     }
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const MemberQrVerificationPage(),
+      builder: (_) => MemberQrVerificationPage(
+        organizationId: widget.organizationId,
+        scannerMembershipId: _currentMembershipId,
+      ),
     ));
   }
 
@@ -645,7 +672,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     _currentUserId = user.id;
 
     final rows = await client.from('committee_memberships')
-        .select('id, user_id, member_code, role, is_active, joined_at')
+        .select('id, user_id, member_code, role, is_active, status, joined_at')
         .eq('organization_id', widget.organizationId)
         .order('joined_at', ascending: false);
     final members = List<Map<String, dynamic>>.from(rows);
@@ -674,14 +701,24 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     }
 
     final details = await client.from('member_details')
-        .select('membership_id, phone, address, date_of_birth, emergency_contact, notes')
+        .select('membership_id, phone, address, date_of_birth, emergency_contact, notes, photo_path')
         .eq('organization_id', widget.organizationId);
     final detailByMembership = <String, Map<String, dynamic>>{
       for (final row in details)
         row['membership_id'].toString(): Map<String, dynamic>.from(row),
     };
     for (final member in members) {
-      member['details'] = detailByMembership[member['id'].toString()];
+      final details = detailByMembership[member['id'].toString()];
+      member['details'] = details;
+      final photoPath = details?['photo_path']?.toString();
+      if (photoPath != null && photoPath.isNotEmpty) {
+        try {
+          final signed = await client.storage.from('member-photos').createSignedUrl(photoPath, 3600);
+          details!['photo_url'] = signed;
+        } catch (_) {
+          details!['photo_url'] = null;
+        }
+      }
     }
     return members;
   }
@@ -695,10 +732,11 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     final dateOfBirth = TextEditingController(text: details?['date_of_birth']?.toString() ?? '');
     final emergencyContact = TextEditingController(text: details?['emergency_contact']?.toString() ?? '');
     final notes = TextEditingController(text: details?['notes']?.toString() ?? '');
+    PlatformFile? selectedPhoto;
     final formKey = GlobalKey<FormState>();
     final saved = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
         title: Text('সদস্যের তথ্য · ${member['member_code'] ?? ''}'),
         content: Form(
           key: formKey,
@@ -706,6 +744,25 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (details?['photo_url'] != null || selectedPhoto?.bytes != null)
+                  CircleAvatar(
+                    radius: 34,
+                    backgroundImage: selectedPhoto?.bytes != null
+                        ? MemoryImage(selectedPhoto!.bytes!)
+                        : NetworkImage(details!['photo_url']!) as ImageProvider,
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.image, allowMultiple: false, withData: true);
+                    if (result != null && result.files.isNotEmpty && dialogContext.mounted) {
+                      setDialogState(() => selectedPhoto = result.files.first);
+                    }
+                  },
+                  icon: const Icon(Icons.add_a_photo_outlined),
+                  label: Text(selectedPhoto == null ? 'সদস্যের ছবি বাছুন' : 'ছবি নির্বাচিত · অন্য ছবি বাছুন'),
+                ),
+                const Text('ছবি সর্বোচ্চ ২ MB; JPG, PNG বা WebP।'),
                 TextFormField(
                   controller: phone,
                   keyboardType: TextInputType.phone,
@@ -760,7 +817,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
             child: const Text('সংরক্ষণ করুন'),
           ),
         ],
-      ),
+      )),
     );
 
     if (saved != true || !mounted) {
@@ -780,7 +837,22 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         'date_of_birth': dateOfBirth.text.trim().isEmpty ? null : dateOfBirth.text.trim(),
         'emergency_contact': emergencyContact.text.trim().isEmpty ? null : emergencyContact.text.trim(),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
+        'photo_path': details?['photo_path'],
       };
+      if (selectedPhoto != null) {
+        final bytes = selectedPhoto!.bytes;
+        if (bytes == null || bytes.isEmpty || bytes.length > 2 * 1024 * 1024) {
+          throw Exception('ছবিটি পড়া যায়নি অথবা ২ MB-এর বেশি।');
+        }
+        final extension = (selectedPhoto!.extension ?? '').toLowerCase();
+        const mimeTypes = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp'};
+        final mime = mimeTypes[extension];
+        if (mime == null) throw Exception('JPG, PNG বা WebP ছবি ব্যবহার করুন।');
+        final path = '${widget.organizationId}/${member['id']}/${DateTime.now().microsecondsSinceEpoch}.$extension';
+        await client.storage.from('member-photos').uploadBinary(
+          path, bytes, fileOptions: FileOptions(contentType: mime, upsert: false));
+        values['photo_path'] = path;
+      }
       final existing = member['details'] as Map<String, dynamic>?;
       if (existing == null) {
         await client.from('member_details').insert({
@@ -866,6 +938,63 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     } finally {
       if (mounted) setState(() => _savingMember = false);
     }
+  }
+
+  Future<void> _changeMemberStatus(Map<String, dynamic> member) async {
+    if (!_canManageMembers || member['user_id'] == _currentUserId) return;
+    final currentStatus = member['status']?.toString() ??
+        (member['is_active'] == true ? 'active' : 'suspended');
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text('${member['display_name'] ?? member['member_code']} · সদস্যের অবস্থা'),
+        children: [
+          for (final status in _membershipStatuses)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, status.$1),
+              child: Text(status.$2),
+            ),
+        ],
+      ),
+    );
+    if (selected == null || selected == currentStatus || !mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('সদস্যের অবস্থা পরিবর্তন করবেন?'),
+        content: Text('${member['display_name'] ?? member['member_code']}-এর অবস্থা ${_membershipStatusLabel(currentStatus)} থেকে ${_membershipStatusLabel(selected)} করা হবে।'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('পরিবর্তন করুন')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _savingMember = true);
+    try {
+      await Supabase.instance.client.rpc('admin_update_committee_member_status', params: {
+        'p_organization_id': widget.organizationId,
+        'p_membership_id': member['id'],
+        'p_new_status': selected,
+      });
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('সদস্যের অবস্থা ${_membershipStatusLabel(selected)} করা হয়েছে।'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('সদস্যের অবস্থা পরিবর্তন হয়নি: $e')));
+    } finally {
+      if (mounted) setState(() => _savingMember = false);
+    }
+  }
+
+  Future<void> _openScanHistory() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => QrVerificationHistoryPage(organizationId: widget.organizationId),
+    ));
   }
 
   Future<void> _addMember() async {
@@ -1000,12 +1129,11 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         }
 
         final allMembers = snapshot.data ?? [];
-        final activeCount = allMembers.where((member) => member['is_active'] == true).length;
+        final activeCount = allMembers.where((member) => member['status'] == 'active' || (member['status'] == null && member['is_active'] == true)).length;
         final query = _searchController.text.trim().toLowerCase();
         final members = allMembers.where((member) {
-          final isActive = member['is_active'] == true;
-          if (_statusFilter == 'active' && !isActive) return false;
-          if (_statusFilter == 'inactive' && isActive) return false;
+          final status = member['status']?.toString() ?? (member['is_active'] == true ? 'active' : 'suspended');
+          if (_statusFilter != 'all' && status != _statusFilter) return false;
           if (query.isEmpty) return true;
           final details = member['details'] as Map<String, dynamic>?;
           final searchable = [
@@ -1071,6 +1199,12 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                       label: const Text('সমিতির নাম ও লোগো সম্পাদনা'),
                     ),
                   ],
+                  OutlinedButton.icon(
+                    onPressed: _openScanHistory,
+                    icon: const Icon(Icons.history),
+                    label: const Text('QR Scan History'),
+                  ),
+                  const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: _openMyMemberCard,
                     icon: const Icon(Icons.badge_outlined),
@@ -1134,8 +1268,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 decoration: const InputDecoration(labelText: 'সদস্যের অবস্থা'),
                 items: const [
                   DropdownMenuItem(value: 'all', child: Text('সব সদস্য')),
-                  DropdownMenuItem(value: 'active', child: Text('সক্রিয় সদস্য')),
-                  DropdownMenuItem(value: 'inactive', child: Text('নিষ্ক্রিয় সদস্য')),
+                  DropdownMenuItem(value: 'active', child: Text('সক্রিয়')),
+                  DropdownMenuItem(value: 'pending', child: Text('অনুমোদনের অপেক্ষায়')),
+                  DropdownMenuItem(value: 'suspended', child: Text('স্থগিত')),
+                  DropdownMenuItem(value: 'expired', child: Text('মেয়াদোত্তীর্ণ')),
                 ],
                 onChanged: (value) => setState(() => _statusFilter = value ?? 'all'),
               ),
@@ -1154,7 +1290,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 Card(child: ListTile(
                   onTap: () => _openMemberCard(member),
                   leading: CircleAvatar(
-                    child: Icon(member['role'] == 'committee_admin'
+                    backgroundImage: (member['details']?['photo_url'] as String?)?.isNotEmpty == true
+                        ? NetworkImage(member['details']['photo_url'].toString()) : null,
+                    child: (member['details']?['photo_url'] as String?)?.isNotEmpty == true
+                        ? null : Icon(member['role'] == 'committee_admin'
                         ? Icons.admin_panel_settings_outlined
                         : member['role'] == 'manager'
                             ? Icons.manage_accounts_outlined
@@ -1165,7 +1304,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                       : member['member_code']?.toString() ?? 'সদস্য'),
                   subtitle: Text([
                     '${_roleLabel(member['role'])} · ${member['member_code'] ?? ''}',
-                    member['is_active'] == true ? 'সক্রিয়' : 'নিষ্ক্রিয়',
+                    _membershipStatusLabel(member['status'] ?? (member['is_active'] == true ? 'active' : 'suspended')),
                     if ((member['details']?['phone'] ?? '').toString().isNotEmpty)
                       member['details']['phone'].toString(),
                     if ((member['details']?['address'] ?? '').toString().isNotEmpty)
@@ -1179,9 +1318,10 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                         icon: const Icon(Icons.badge_outlined),
                       ),
                     PopupMenuButton<String>(
-                      tooltip: 'সদস্যের তথ্য',
+                      tooltip: 'সদস্য পরিচালনা',
                       onSelected: (action) {
                         if (action == 'edit') _editMemberDetails(member);
+                        if (action == 'status') _changeMemberStatus(member);
                       },
                       itemBuilder: (context) => [
                         PopupMenuItem(
@@ -1189,7 +1329,16 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                           enabled: !_savingMember,
                           child: const ListTile(
                             leading: Icon(Icons.edit_outlined),
-                            title: Text('সদস্যের তথ্য সম্পাদনা'),
+                            title: Text('সদস্যের তথ্য ও ছবি সম্পাদনা'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'status',
+                          enabled: !_savingMember && member['user_id'] != _currentUserId,
+                          child: const ListTile(
+                            leading: Icon(Icons.toggle_on_outlined),
+                            title: Text('Membership Status পরিবর্তন'),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
@@ -1241,9 +1390,11 @@ class MemberIdCardPage extends StatelessWidget {
     final memberId = member['id']?.toString() ?? '';
     final memberCode = member['member_code']?.toString() ?? '—';
     final displayName = member['display_name']?.toString().trim();
-    final isActive = member['is_active'] == true;
+    final status = member['status']?.toString() ?? (member['is_active'] == true ? 'active' : 'suspended');
+    final isActive = status == 'active';
     final details = member['details'] as Map<String, dynamic>?;
     final phone = details?['phone']?.toString() ?? '';
+    final photoUrl = details?['photo_url']?.toString();
     final logoUrl = logoPath == null
         ? null
         : Supabase.instance.client.storage.from('committee-logos').getPublicUrl(logoPath!);
@@ -1301,10 +1452,12 @@ class MemberIdCardPage extends StatelessWidget {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
-                      const CircleAvatar(
-                        radius: 38,
-                        backgroundColor: Color(0xFFE8F2EF),
-                        child: Icon(Icons.person, size: 44, color: Color(0xFF126B55)),
+                      CircleAvatar(
+                        radius: 42,
+                        backgroundColor: const Color(0xFFE8F2EF),
+                        backgroundImage: photoUrl == null || photoUrl.isEmpty ? null : NetworkImage(photoUrl),
+                        child: photoUrl == null || photoUrl.isEmpty
+                            ? const Icon(Icons.person, size: 44, color: Color(0xFF126B55)) : null,
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -1347,7 +1500,7 @@ class MemberIdCardPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          isActive ? 'ACTIVE MEMBER' : 'INACTIVE MEMBER',
+                          status.toUpperCase().replaceAll('_', ' '),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: isActive ? const Color(0xFF176B43) : const Color(0xFFB3261E),
@@ -1400,7 +1553,14 @@ class _MemberIdField extends StatelessWidget {
 }
 
 class MemberQrVerificationPage extends StatefulWidget {
-  const MemberQrVerificationPage({super.key});
+  const MemberQrVerificationPage({
+    super.key,
+    required this.organizationId,
+    required this.scannerMembershipId,
+  });
+
+  final String organizationId;
+  final String scannerMembershipId;
 
   @override
   State<MemberQrVerificationPage> createState() => _MemberQrVerificationPageState();
@@ -1427,10 +1587,13 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
           payload['organization_id'] is! String || payload['membership_id'] is! String) {
         throw const FormatException('Unsupported QR code');
       }
+      if (payload['organization_id'] != widget.organizationId) {
+        throw const FormatException('QR code belongs to another committee');
+      }
 
       final client = Supabase.instance.client;
       final membership = await client.from('committee_memberships')
-          .select('id, user_id, member_code, role, is_active, joined_at')
+          .select('id, user_id, member_code, role, is_active, status, joined_at')
           .eq('organization_id', payload['organization_id'] as String)
           .eq('id', payload['membership_id'] as String)
           .maybeSingle();
@@ -1445,14 +1608,28 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
         return;
       }
 
+      await client.from('qr_verification_logs').insert({
+        'organization_id': widget.organizationId,
+        'membership_id': membership['id'],
+        'scanned_by_membership_id': widget.scannerMembershipId,
+      });
       final results = await Future.wait<dynamic>([
         client.from('profiles').select('display_name')
           .eq('id', membership['user_id'].toString()).maybeSingle(),
         client.from('organizations').select('name')
           .eq('id', payload['organization_id'] as String).maybeSingle(),
+        client.from('member_details').select('photo_path')
+          .eq('organization_id', widget.organizationId)
+          .eq('membership_id', membership['id']).maybeSingle(),
       ]);
       final profile = results[0] as Map<String, dynamic>?;
       final organization = results[1] as Map<String, dynamic>?;
+      final details = results[2] as Map<String, dynamic>?;
+      String? photoUrl;
+      final photoPath = details?['photo_path']?.toString();
+      if (photoPath != null && photoPath.isNotEmpty) {
+        photoUrl = await client.storage.from('member-photos').createSignedUrl(photoPath, 3600);
+      }
       if (mounted) {
         setState(() {
           _completed = true;
@@ -1460,6 +1637,7 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
             ...membership,
             'display_name': profile?['display_name']?.toString() ?? 'সদস্য',
             'organization_name': organization?['name']?.toString() ?? 'সমিতি',
+            'photo_url': photoUrl,
           };
         });
       }
@@ -1486,7 +1664,8 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
   @override
   Widget build(BuildContext context) {
     final member = _verifiedMember;
-    final isActive = member?['is_active'] == true;
+    final status = member?['status']?.toString() ?? (member?['is_active'] == true ? 'active' : 'suspended');
+    final isActive = status == 'active';
     return Scaffold(
       appBar: AppBar(title: const Text('Member QR Verification')),
       body: Column(
@@ -1521,11 +1700,21 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
                               ],
                               if (member != null) ...[
                                 const SizedBox(height: 16),
+                                CircleAvatar(
+                                  radius: 34,
+                                  backgroundImage: (member['photo_url'] as String?)?.isNotEmpty == true
+                                      ? NetworkImage(member['photo_url'].toString()) : null,
+                                  child: (member['photo_url'] as String?)?.isNotEmpty == true
+                                      ? null : const Icon(Icons.person, size: 36),
+                                ),
+                                const SizedBox(height: 10),
                                 Text(member['display_name'].toString(),
                                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                                 Text('Member ID: ${member['member_code'] ?? '—'}'),
                                 Text(member['organization_name'].toString()),
-                                Text('Status: ${isActive ? 'Active' : 'Inactive'}'),
+                                Text('Status: ${status.toUpperCase()}'),
+                                if (!isActive)
+                                  const Text('এই সদস্য বর্তমানে Active নন।', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
                               ],
                               const SizedBox(height: 20),
                               FilledButton.icon(
@@ -1587,6 +1776,104 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
       ),
     );
   }
+}
+
+class QrVerificationHistoryPage extends StatefulWidget {
+  const QrVerificationHistoryPage({super.key, required this.organizationId});
+
+  final String organizationId;
+
+  @override
+  State<QrVerificationHistoryPage> createState() => _QrVerificationHistoryPageState();
+}
+
+class _QrVerificationHistoryPageState extends State<QrVerificationHistoryPage> {
+  late Future<List<Map<String, dynamic>>> _history;
+
+  @override
+  void initState() {
+    super.initState();
+    _history = _loadHistory();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadHistory() async {
+    final client = Supabase.instance.client;
+    final logs = await client.from('qr_verification_logs')
+        .select('id, membership_id, scanned_by_membership_id, scanned_at')
+        .eq('organization_id', widget.organizationId)
+        .order('scanned_at', ascending: false)
+        .limit(100);
+    final rows = List<Map<String, dynamic>>.from(logs);
+    if (rows.isEmpty) return rows;
+    final ids = rows.expand((row) => [
+      row['membership_id'].toString(),
+      row['scanned_by_membership_id'].toString(),
+    ]).toSet().toList();
+    final memberships = await client.from('committee_memberships')
+        .select('id, member_code, user_id')
+        .eq('organization_id', widget.organizationId)
+        .inFilter('id', ids);
+    final membershipById = {
+      for (final row in memberships) row['id'].toString(): Map<String, dynamic>.from(row),
+    };
+    final userIds = memberships.map((row) => row['user_id'].toString()).toSet().toList();
+    final profiles = userIds.isEmpty ? <dynamic>[] :
+      await client.from('profiles').select('id, display_name').inFilter('id', userIds);
+    final names = {for (final row in profiles) row['id'].toString(): row['display_name']?.toString()};
+    for (final row in rows) {
+      final member = membershipById[row['membership_id'].toString()];
+      final scanner = membershipById[row['scanned_by_membership_id'].toString()];
+      row['member_code'] = member?['member_code'] ?? '—';
+      row['member_name'] = names[member?['user_id']?.toString()] ?? 'সদস্য';
+      row['scanner_code'] = scanner?['member_code'] ?? '—';
+      row['scanner_name'] = names[scanner?['user_id']?.toString()] ?? 'সদস্য';
+    }
+    return rows;
+  }
+
+  String _date(Object? value) {
+    final date = DateTime.parse(value.toString()).toLocal();
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} '
+      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('QR Verification History')),
+    body: FutureBuilder<List<Map<String, dynamic>>>(
+      future: _history,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text('Scan history লোড করা যায়নি: ${snapshot.error}'),
+          ));
+        }
+        final rows = snapshot.data ?? [];
+        if (rows.isEmpty) return const Center(child: Text('এখনো কোনো QR scan history নেই।'));
+        return RefreshIndicator(
+          onRefresh: () async => setState(() => _history = _loadHistory()),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: rows.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              return Card(child: ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.qr_code_scanner)),
+                title: Text('${row['member_name']} · ${row['member_code']}'),
+                subtitle: Text('Scan করেছেন: ${row['scanner_name']} · ${row['scanner_code']}\n${_date(row['scanned_at'])}'),
+                isThreeLine: true,
+              ));
+            },
+          ),
+        );
+      },
+    ),
+  );
 }
 
 class FinancialWorkspacePage extends StatefulWidget {
