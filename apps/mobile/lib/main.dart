@@ -1302,10 +1302,10 @@ class MemberIdCardPage extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(_roleLabel, style: const TextStyle(color: Colors.black54)),
                       const SizedBox(height: 18),
-                      const _MemberIdField(label: 'MEMBER ID', value: memberCode),
+                      _MemberIdField(label: 'MEMBER ID', value: memberCode),
                       if (phone.isNotEmpty) ...[
                         const SizedBox(height: 10),
-                        const _MemberIdField(label: 'MOBILE', value: phone),
+                        _MemberIdField(label: 'MOBILE', value: phone),
                       ],
                       const SizedBox(height: 18),
                       Container(
