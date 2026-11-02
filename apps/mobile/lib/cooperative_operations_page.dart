@@ -168,6 +168,18 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     } catch (e) { await _messageError(e); }
   }
 
+  Future<void> _disburseLoan(Map<String, dynamic> row) async {
+    try {
+      await Supabase.instance.client.rpc('disburse_cooperative_loan', params: {
+        'p_loan_id': row['id'],
+      });
+      await _load();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ঋণ বিতরণ নথিভুক্ত হয়েছে।')),
+      );
+    } catch (e) { await _messageError(e); }
+  }
+
   Future<void> _repayLoan(Map<String, dynamic> row) async {
     final amount = TextEditingController();
     final ref = TextEditingController();
@@ -393,9 +405,11 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       trailing: PopupMenuButton<String>(onSelected: (v) {
         if (v == 'approved' || v == 'rejected') _reviewLoan(r, v);
         if (v == 'repay') _repayLoan(r);
+        if (v == 'disburse') _disburseLoan(r);
       }, itemBuilder: (_) => [
         if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
         if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
+        if (_canReviewFinance && r['status'] == 'approved') const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
         if (_canFinance && ['approved','disbursed'].contains(r['status'])) const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
       ]),
     )),
