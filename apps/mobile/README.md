@@ -42,6 +42,15 @@ The Android and desktop workflows also require these GitHub Actions repository v
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY` (a publishable/anon key only; never use a service-role key)
 
+## Committee accounts and roles
+
+- Creating a committee makes the signed-in creator its first active Committee Admin.
+- A person must first register and sign in with their SomityHub account. An Admin or Manager then adds that account to the committee using the registration email; no User UUID is needed.
+- An Admin can select the committee role while adding an account, or change another member's role from that member's action menu. An Admin cannot change their own role, and the last active Admin cannot be demoted.
+- A Manager can add regular Members and manage member details, but cannot assign roles. Role changes are enforced by Supabase and recorded in the audit log.
+- The committee workspace displays the signed-in account's role and each member's name and role. `ADM-`/`MBR-` codes identify memberships; the live role field controls permissions.
+- President, General Secretary, Assistant Secretary, Accountant, Treasurer, Secretary, Auditor and Member are currently committee designations. Dedicated financial permissions or workflows for those titles are not part of this role setup.
+
 ## Local setup
 
 Install Flutter stable and the platform tooling, then:
