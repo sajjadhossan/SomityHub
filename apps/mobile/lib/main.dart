@@ -1573,11 +1573,20 @@ class _MemberQrVerificationPageState extends State<MemberQrVerificationPage> {
     }
     setState(() { _processing = true; _error = null; });
     try {
-      final decoded = jsonDecode(rawValue);
-      if (decoded is! Map) {
-        throw const FormatException('Invalid QR data');
+      Map<String, dynamic> payload;
+      final scannedUri = Uri.tryParse(rawValue);
+      if (scannedUri != null && scannedUri.scheme == 'somityhub' && scannedUri.host == 'verify') {
+        payload = {
+          'app': 'somityhub',
+          'v': 1,
+          'organization_id': scannedUri.queryParameters['organization_id'],
+          'membership_id': scannedUri.queryParameters['membership_id'],
+        };
+      } else {
+        final decoded = jsonDecode(rawValue);
+        if (decoded is! Map) throw const FormatException('Invalid QR data');
+        payload = Map<String, dynamic>.from(decoded);
       }
-      final payload = Map<String, dynamic>.from(decoded);
       if (payload['app'] != 'somityhub' || payload['v'] != 1 ||
           payload['organization_id'] is! String || payload['membership_id'] is! String) {
         throw const FormatException('Unsupported QR code');

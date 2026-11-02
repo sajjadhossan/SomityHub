@@ -75,6 +75,30 @@ jobs:
         run: |
           flutter create --platforms=android --org com.somityhub --project-name app .
           sed -i 's/android:label="app"/android:label="SomityHub"/' android/app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text(encoding="utf-8")
+          if 'android:scheme="somityhub"' not in content:
+              activity = re.search(r'<activity\\b(?=[^>]*android:name="[^"]*MainActivity")[^>]*>', content)
+              if not activity:
+                  raise SystemExit("MainActivity declaration was not found.")
+              intent_filter = '''
+                  <intent-filter>
+                      <action android:name="android.intent.action.VIEW" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+                      <data android:scheme="somityhub" android:host="verify" />
+                  </intent-filter>'''
+              content = content[:activity.end()] + intent_filter + content[activity.end():]
+              manifest.write_text(content, encoding="utf-8")
+          check = manifest.read_text(encoding="utf-8")
+          if 'android:scheme="somityhub"' not in check or 'android:host="verify"' not in check:
+              raise SystemExit("SomityHub verification deep-link intent filter was not configured.")
+          print("Verified SomityHub custom URI intent filter.")
+          PY
       - name: Ensure Android Internet permission
         working-directory: apps/mobile
         shell: bash
