@@ -33,6 +33,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   bool get _canManage => const ['committee_admin', 'manager'].contains(widget.role);
   bool get _canReviewFinance => const ['committee_admin', 'manager', 'treasurer'].contains(widget.role);
   bool get _canFinance => const ['committee_admin', 'manager', 'treasurer', 'accountant', 'auditor'].contains(widget.role);
+  bool get _canCreateVoucher => const ['committee_admin', 'manager', 'treasurer', 'accountant'].contains(widget.role);
   bool get _canManageMeetings => const ['committee_admin', 'manager', 'general_secretary', 'secretary'].contains(widget.role);
 
   @override
@@ -401,8 +402,9 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   ]);
 
   Widget _vouchersView() => ListView(padding: const EdgeInsets.all(16), children: [
-    if (_canFinance) FilledButton.icon(onPressed: _createVoucher, icon: const Icon(Icons.add), label: const Text('নতুন ভাউচার')),
+    if (_canCreateVoucher) FilledButton.icon(onPressed: _createVoucher, icon: const Icon(Icons.add), label: const Text('নতুন ভাউচার')),
     if (!_canFinance) const ListTile(title: Text('ভাউচার দেখতে Finance role প্রয়োজন।')),
+    if (_canFinance && !_canCreateVoucher) const ListTile(title: Text('Auditor role-এ ভাউচার দেখা যাবে; নতুন ভাউচার তৈরি করা যাবে না।')),
     if (_vouchers.isEmpty && _canFinance) const ListTile(title: Text('কোনো ভাউচার নেই।')),
     for (final r in _vouchers) Card(child: ListTile(
       title: Text('${r['voucher_number']} · ৳${_money(r['amount'])}'),
