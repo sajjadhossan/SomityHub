@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -447,6 +448,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   String _statusFilter = 'all';
   String _currentUserId = '';
   String _currentRole = 'member';
+  String _currentMembershipId = '';
   bool _canManageMembers = false;
   bool _isCommitteeAdmin = false;
   bool _savingMember = false;
@@ -609,6 +611,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     if (actorRows.isEmpty) {
       throw Exception('এই account-টি এই সমিতির সদস্য নয়। Admin-এর কাছে account যোগ করতে বলুন।');
     }
+    _currentMembershipId = actorRows.first['id'].toString();
     _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
     _currentRole = actorRows.first['role']?.toString() ?? 'member';
     _canManageMembers = _isCommitteeAdmin || actorRows.first['role'] == 'manager';
@@ -1018,6 +1021,19 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                       icon: const Icon(Icons.person_add_alt_1),
                       label: Text(_isCommitteeAdmin ? 'নিবন্ধিত account যোগ করুন' : 'সাধারণ সদস্য যোগ করুন'),
                     ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => FinancialWorkspacePage(
+                        organizationId: widget.organizationId,
+                        committeeName: _committeeName,
+                        membershipId: _currentMembershipId,
+                        role: _currentRole,
+                      ),
+                    )),
+                    icon: const Icon(Icons.account_balance_wallet_outlined),
+                    label: const Text('আর্থিক হিসাব ও লেনদেন'),
+                  ),
                 ]),
               )),
               const SizedBox(height: 12),
@@ -1117,6 +1133,342 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         );
       },
     ),
+  );
+}
+
+
+class FinancialWorkspacePage extends StatefulWidget {
+  const FinancialWorkspacePage({
+    super.key,
+    required this.organizationId,
+    required this.committeeName,
+    required this.membershipId,
+    required this.role,
+  });
+
+  final String organizationId;
+  final String committeeName;
+  final String membershipId;
+  final String role;
+
+  @override
+  State<FinancialWorkspacePage> createState() => _FinancialWorkspacePageState();
+}
+
+class _FinancialWorkspacePageState extends State<FinancialWorkspacePage> {
+  bool _loading = true;
+  bool _saving = false;
+  num _balance = 0;
+  List<Map<String, dynamic>> _ledger = [];
+  List<Map<String, dynamic>> _pending = [];
+  String? _error;
+
+  bool get _canReview => widget.role == 'committee_admin' || widget.role == 'treasurer';
+  bool get _canSeeCommitteeQueue =>
+      const {'committee_admin', 'manager', 'treasurer', 'auditor'}.contains(widget.role);
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final client = Supabase.instance.client;
+      final results = await Future.wait<dynamic>([
+        client.rpc('get_member_balance', params: {
+          'p_org_id': widget.organizationId,
+          'p_membership_id': widget.membershipId,
+        }),
+        client.rpc('get_member_ledger', params: {
+          'p_org_id': widget.organizationId,
+          'p_membership_id': widget.membershipId,
+          'p_limit': 100,
+          'p_before': null,
+        }),
+      ]);
+      final ledgerRows = List<Map<String, dynamic>>.from(results[1] as List);
+      var pendingQuery = client.from('financial_transactions')
+          .select('id, membership_id, transaction_type, amount, description, reference_number, status, created_at')
+          .eq('organization_id', widget.organizationId)
+          .eq('status', 'pending');
+      if (!_canSeeCommitteeQueue) {
+        pendingQuery = pendingQuery.eq('membership_id', widget.membershipId);
+      }
+      final pendingRows = await pendingQuery.order('created_at', ascending: false).limit(100);
+      if (!mounted) return;
+      setState(() {
+        _balance = results[0] as num? ?? 0;
+        _ledger = ledgerRows;
+        _pending = List<Map<String, dynamic>>.from(pendingRows);
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'আর্থিক তথ্য লোড করা যায়নি: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _money(Object? value) {
+    final amount = num.tryParse(value?.toString() ?? '') ?? 0;
+    return '৳ ${amount.toStringAsFixed(2)}';
+  }
+
+  String _typeLabel(Object? type) {
+    switch (type?.toString()) {
+      case 'deposit': return 'জমা';
+      case 'withdrawal': return 'উত্তোলন';
+      default: return type?.toString() ?? 'লেনদেন';
+    }
+  }
+
+  String _statusLabel(Object? status) {
+    switch (status?.toString()) {
+      case 'pending': return 'অনুমোদনের অপেক্ষায়';
+      case 'approved': return 'অনুমোদিত';
+      case 'rejected': return 'বাতিল';
+      default: return status?.toString() ?? '';
+    }
+  }
+
+  String _newUuid() {
+    final random = math.Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  Future<void> _submitRequest(String type) async {
+    final formKey = GlobalKey<FormState>();
+    final amount = TextEditingController();
+    final description = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(type == 'deposit' ? 'জমার অনুরোধ' : 'উত্তোলনের অনুরোধ'),
+        content: Form(
+          key: formKey,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextFormField(
+              controller: amount,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'পরিমাণ (BDT)'),
+              validator: (value) {
+                final parsed = num.tryParse((value ?? '').trim());
+                return parsed == null || !parsed.isFinite || parsed <= 0
+                    ? 'সঠিক পরিমাণ লিখুন।' : null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: description,
+              maxLength: 300,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'বিবরণ (ঐচ্ছিক)'),
+            ),
+            if (type == 'deposit') ...[
+              const SizedBox(height: 8),
+              const Text('জমা অনুমোদনের আগে ব্যাংক/ক্যাশ জমার প্রমাণ যাচাই প্রয়োজন হতে পারে।',
+                style: TextStyle(color: Colors.black54)),
+            ],
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(onPressed: () {
+            if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true);
+          }, child: const Text('অনুরোধ পাঠান')),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) {
+      amount.dispose();
+      description.dispose();
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.rpc('submit_financial_request', params: {
+        'p_org_id': widget.organizationId,
+        'p_membership_id': widget.membershipId,
+        'p_transaction_type': type,
+        'p_amount': num.parse(amount.text.trim()),
+        'p_description': description.text.trim().isEmpty ? null : description.text.trim(),
+        'p_reference_number': null,
+        'p_idempotency_key': _newUuid(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('লেনদেনের অনুরোধ জমা হয়েছে। অনুমোদনের আগে ব্যালেন্সে যোগ হবে না।')),
+        );
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('অনুরোধ জমা হয়নি: $e')),
+        );
+      }
+    } finally {
+      amount.dispose();
+      description.dispose();
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _review(Map<String, dynamic> transaction, String decision) async {
+    if (!_canReview) return;
+    final note = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(decision == 'approved' ? 'লেনদেন অনুমোদন' : 'লেনদেন বাতিল'),
+        content: TextField(
+          controller: note,
+          maxLength: 500,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'মন্তব্য (ঐচ্ছিক)'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ফিরে যান')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(decision == 'approved' ? 'অনুমোদন করুন' : 'বাতিল করুন')),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) { note.dispose(); return; }
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.rpc('review_financial_request', params: {
+        'p_transaction_id': transaction['id'],
+        'p_decision': decision,
+        'p_note': note.text.trim().isEmpty ? null : note.text.trim(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(decision == 'approved' ? 'লেনদেন অনুমোদিত হয়েছে।' : 'লেনদেন বাতিল হয়েছে।')),
+        );
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Review সম্পন্ন হয়নি: $e')),
+        );
+      }
+    } finally {
+      note.dispose();
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String _date(Object? value) {
+    if (value == null) return '';
+    final date = DateTime.tryParse(value.toString())?.toLocal();
+    if (date == null) return value.toString();
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('আর্থিক হিসাব'),
+      actions: [IconButton(onPressed: _loading ? null : _load,
+        icon: const Icon(Icons.refresh), tooltip: 'Refresh')],
+    ),
+    body: _loading
+      ? const Center(child: CircularProgressIndicator())
+      : _error != null
+        ? ListView(padding: const EdgeInsets.all(20), children: [
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('আবার চেষ্টা করুন')),
+          ])
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              children: [
+                Card(child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(widget.committeeName, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    const Text('আপনার বর্তমান অনুমোদিত ব্যালেন্স'),
+                    Text(_money(_balance), style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold, color: const Color(0xFF126B55))),
+                  ]),
+                )),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: FilledButton.icon(
+                    onPressed: _saving ? null : () => _submitRequest('deposit'),
+                    icon: const Icon(Icons.add_circle_outline), label: const Text('জমার অনুরোধ'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: OutlinedButton.icon(
+                    onPressed: _saving ? null : () => _submitRequest('withdrawal'),
+                    icon: const Icon(Icons.outbox_outlined), label: const Text('উত্তোলন'))),
+                ]),
+                if (_saving) const LinearProgressIndicator(),
+                const SizedBox(height: 20),
+                Text('অনুমোদনের অপেক্ষায়', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (_pending.isEmpty)
+                  const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('কোনো pending অনুরোধ নেই।')))
+                else
+                  for (final item in _pending)
+                    Card(child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Expanded(child: Text(_typeLabel(item['transaction_type']),
+                            style: const TextStyle(fontWeight: FontWeight.bold))),
+                          Text(_money(item['amount']), style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ]),
+                        if ((item['description'] ?? '').toString().isNotEmpty)
+                          Text(item['description'].toString()),
+                        Text('${_date(item['created_at'])} · ${_statusLabel(item['status'])}',
+                          style: const TextStyle(color: Colors.black54)),
+                        if (_canReview) ...[
+                          const SizedBox(height: 8),
+                          Wrap(spacing: 8, children: [
+                            FilledButton.tonal(onPressed: _saving ? null : () => _review(item, 'approved'),
+                              child: const Text('অনুমোদন')),
+                            OutlinedButton(onPressed: _saving ? null : () => _review(item, 'rejected'),
+                              child: const Text('বাতিল')),
+                          ]),
+                        ],
+                      ]),
+                    )),
+                const SizedBox(height: 20),
+                Text('লেনদেনের হিসাব', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (_ledger.isEmpty)
+                  const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('এখনো কোনো অনুমোদিত লেনদেন নেই।')))
+                else
+                  for (final item in _ledger)
+                    Card(child: ListTile(
+                      leading: Icon(
+                        (num.tryParse(item['signed_amount']?.toString() ?? '') ?? 0) >= 0
+                          ? Icons.south_west : Icons.north_east,
+                        color: (num.tryParse(item['signed_amount']?.toString() ?? '') ?? 0) >= 0
+                          ? Colors.green : Colors.red,
+                      ),
+                      title: Text(_typeLabel(item['transaction_type'])),
+                      subtitle: Text(_date(item['transaction_date'])),
+                      trailing: Text(_money(item['signed_amount']),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    )),
+                const SizedBox(height: 8),
+                const Text('Pending অনুরোধ অনুমোদিত না হওয়া পর্যন্ত ব্যালেন্স পরিবর্তিত হয় না। জমা অনুমোদনের জন্য যাচাইকৃত evidence প্রয়োজন।',
+                  style: TextStyle(color: Colors.black54)),
+              ],
+            ),
+          ),
   );
 }
 
