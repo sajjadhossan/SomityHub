@@ -248,6 +248,7 @@ class _CommitteePageState extends State<CommitteePage> {
       }
       final assets = List<Map<String, dynamic>>.from(release['assets'] as List? ?? const []);
       final abiInfo = await DeviceInfoPlugin().androidInfo;
+      if (!mounted) return;
       final supportedAbis = abiInfo.supportedAbis.toSet();
       const abiAssetNames = <String, String>{
         'arm64-v8a': 'SomityHub-arm64-v8a.apk',
@@ -269,18 +270,19 @@ class _CommitteePageState extends State<CommitteePage> {
         builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) {
           return AlertDialog(
             title: const Text('ফোনের উপযোগী APK বাছুন'),
-            content: Column(mainAxisSize: MainAxisSize.min, children: [
+            content: RadioGroup<Map<String, dynamic>>(
+              groupValue: selectedChoice,
+              onChanged: (asset) { if (asset != null) setDialogState(() => selectedChoice = asset); },
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
               for (var index = 0; index < choices.length; index++) ...[
                 _ApkChoiceTile(
                   asset: choices[index],
                   recommended: index == 0,
-                  groupValue: selectedChoice,
-                  onChanged: (asset) => setDialogState(() => selectedChoice = asset),
                 ),
               ],
               if (compatible.isEmpty)
                 const Text('ABI মিলিয়ে APK পাওয়া যায়নি; Universal APK দেখানো হচ্ছে।'),
-            ]),
+            ])),
             actions: [
               TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('পরে')),
               FilledButton(onPressed: () => Navigator.pop(dialogContext, selectedChoice), child: const Text('Download Update')),
@@ -402,12 +404,10 @@ class _CommitteePageState extends State<CommitteePage> {
 }
 
 class _ApkChoiceTile extends StatelessWidget {
-  const _ApkChoiceTile({required this.asset, required this.recommended, required this.groupValue, required this.onChanged});
+  const _ApkChoiceTile({required this.asset, required this.recommended});
 
   final Map<String, dynamic> asset;
   final bool recommended;
-  final Map<String, dynamic> groupValue;
-  final ValueChanged<Map<String, dynamic>> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -417,8 +417,6 @@ class _ApkChoiceTile extends StatelessWidget {
     final label = name.replaceAll('SomityHub-', '').replaceAll('.apk', '');
     return RadioListTile<Map<String, dynamic>>(
       value: asset,
-      groupValue: groupValue,
-      onChanged: (value) { if (value != null) onChanged(value); },
       title: Text('$label · $megabytes MB${recommended ? ' · ছোটতম' : ''}'),
     );
   }
