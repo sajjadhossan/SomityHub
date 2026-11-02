@@ -10,6 +10,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'cooperative_documents_page.dart';
+import 'cooperative_operations_page.dart';
+import 'multi_branch_assignment_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -1219,6 +1222,24 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                       label: Text(_isCommitteeAdmin ? 'নিবন্ধিত account যোগ করুন' : 'সাধারণ সদস্য যোগ করুন'),
                     ),
                   const SizedBox(height: 10),
+                  if (_canManageMembers) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => BranchManagementPage(organizationId: widget.organizationId),
+                      )),
+                      icon: const Icon(Icons.account_tree_outlined),
+                      label: const Text('শাখা ব্যবস্থাপনা'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => MultiBranchMemberAssignmentPage(organizationId: widget.organizationId),
+                      )),
+                      icon: const Icon(Icons.people_alt_outlined),
+                      label: const Text('সদস্যের একাধিক শাখা নির্ধারণ'),
+                    ),
+                  ],
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
                       builder: (_) => FinancialWorkspacePage(
@@ -1230,6 +1251,29 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     )),
                     icon: const Icon(Icons.account_balance_wallet_outlined),
                     label: const Text('আর্থিক হিসাব ও লেনদেন'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => CooperativeDocumentsPage(
+                        organizationId: widget.organizationId,
+                        role: _currentRole,
+                      ),
+                    )),
+                    icon: const Icon(Icons.folder_copy_outlined),
+                    label: const Text('সমিতির নথিপত্র'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => CooperativeOperationsPage(
+                        organizationId: widget.organizationId,
+                        membershipId: _currentMembershipId,
+                        role: _currentRole,
+                      ),
+                    )),
+                    icon: const Icon(Icons.assignment_outlined),
+                    label: const Text('ঋণ, ভাউচার, সভা ও রিপোর্ট'),
                   ),
                 ]),
               )),
@@ -2329,5 +2373,292 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ))),
         ])),
+  );
+}
+
+
+class BranchManagementPage extends StatefulWidget {
+  const BranchManagementPage({super.key, required this.organizationId});
+  final String organizationId;
+
+  @override
+  State<BranchManagementPage> createState() => _BranchManagementPageState();
+}
+
+class _BranchManagementPageState extends State<BranchManagementPage> {
+  late Future<List<Map<String, dynamic>>> _branches;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _branches = _loadBranches();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadBranches() async {
+    final rows = await Supabase.instance.client.from('organization_branches')
+      .select('id, branch_code, name, address, phone, is_default, is_active, created_at')
+      .eq('organization_id', widget.organizationId)
+      .order('is_default', ascending: false)
+      .order('name');
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  void _refresh() => setState(() => _branches = _loadBranches());
+
+  Future<void> _createBranch() async {
+    final formKey = GlobalKey<FormState>();
+    final code = TextEditingController();
+    final name = TextEditingController();
+    final address = TextEditingController();
+    final phone = TextEditingController();
+    final accepted = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('নতুন শাখা তৈরি করুন'),
+      content: Form(key: formKey, child: SingleChildScrollView(child: Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          TextFormField(controller: code, textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(labelText: 'Branch Code'),
+            validator: (v) => v == null || v.trim().isEmpty || v.trim().length > 32 ? '১–৩২ অক্ষরের code দিন।' : null),
+          const SizedBox(height: 12),
+          TextFormField(controller: name, decoration: const InputDecoration(labelText: 'শাখার নাম'),
+            validator: (v) => v == null || v.trim().length < 2 || v.trim().length > 120 ? '২–১২০ অক্ষরের নাম দিন।' : null),
+          const SizedBox(height: 12),
+          TextFormField(controller: address, decoration: const InputDecoration(labelText: 'ঠিকানা (ঐচ্ছিক)')),
+          const SizedBox(height: 12),
+          TextFormField(controller: phone, keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'ফোন (ঐচ্ছিক)')),
+        ],
+      ))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+        FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true); },
+          child: const Text('তৈরি করুন')),
+      ],
+    ));
+    if (accepted != true || !mounted) {
+      code.dispose(); name.dispose(); address.dispose(); phone.dispose();
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) throw Exception('Login session পাওয়া যায়নি।');
+      await Supabase.instance.client.from('organization_branches').insert({
+        'organization_id': widget.organizationId,
+        'branch_code': code.text.trim().toUpperCase(),
+        'name': name.text.trim(),
+        'address': address.text.trim().isEmpty ? null : address.text.trim(),
+        'phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
+        'created_by': userId,
+      });
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('নতুন শাখা তৈরি হয়েছে।')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('শাখা তৈরি করা যায়নি: $e')),
+        );
+      }
+    } finally {
+      code.dispose(); name.dispose(); address.dispose(); phone.dispose();
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _setActive(Map<String, dynamic> branch, bool active) async {
+    if (branch['is_default'] == true && !active) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Default branch নিষ্ক্রিয় করা যাবে না।')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.from('organization_branches')
+        .update({'is_active': active, 'updated_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('organization_id', widget.organizationId).eq('id', branch['id']);
+      _refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('শাখার অবস্থা পরিবর্তন হয়নি: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('শাখা ব্যবস্থাপনা'), actions: [
+      IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
+    ]),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: _saving ? null : _createBranch,
+      icon: const Icon(Icons.add), label: const Text('নতুন শাখা'),
+    ),
+    body: FutureBuilder<List<Map<String, dynamic>>>(
+      future: _branches,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Padding(padding: const EdgeInsets.all(20),
+            child: Text('শাখার তালিকা লোড হয়নি: ${snapshot.error}')));
+        }
+        final branches = snapshot.data ?? [];
+        return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            const Text('সমিতির শাখাগুলো এখানে দেখা ও পরিচালনা করা যাবে। Default branch বিদ্যমান financial records-এর ধারাবাহিকতা রক্ষা করে।'),
+            const SizedBox(height: 12),
+            if (branches.isEmpty) const Card(child: Padding(
+              padding: EdgeInsets.all(16), child: Text('কোনো শাখা পাওয়া যায়নি।'))),
+            for (final branch in branches)
+              Card(child: ListTile(
+                leading: CircleAvatar(child: Icon(branch['is_default'] == true
+                  ? Icons.home_work_outlined : Icons.account_tree_outlined)),
+                title: Text(branch['name']?.toString() ?? 'শাখা'),
+                subtitle: Text('${branch['branch_code']} · ${branch['is_default'] == true ? 'Default' : 'Additional'} · ${branch['is_active'] == true ? 'সক্রিয়' : 'নিষ্ক্রিয়'}${(branch['address'] ?? '').toString().isEmpty ? '' : '\\n${branch['address']}'}'),
+                trailing: branch['is_default'] == true ? const Chip(label: Text('Default'))
+                  : Switch(value: branch['is_active'] == true, onChanged: _saving ? null
+                    : (value) => _setActive(branch, value)),
+              )),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+
+class BranchMemberAssignmentPage extends StatefulWidget {
+  const BranchMemberAssignmentPage({super.key, required this.organizationId});
+  final String organizationId;
+
+  @override
+  State<BranchMemberAssignmentPage> createState() => _BranchMemberAssignmentPageState();
+}
+
+class _BranchMemberAssignmentPageState extends State<BranchMemberAssignmentPage> {
+  List<Map<String, dynamic>> _branches = [];
+  List<Map<String, dynamic>> _members = [];
+  String? _branchId;
+  String? _membershipId;
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final client = Supabase.instance.client;
+      final branchRows = await client.from('organization_branches')
+        .select('id, name, branch_code, is_active')
+        .eq('organization_id', widget.organizationId)
+        .eq('is_active', true).order('name');
+      final memberRows = await client.from('committee_memberships')
+        .select('id, user_id, member_code, role')
+        .eq('organization_id', widget.organizationId)
+        .eq('is_active', true).order('member_code');
+      final profiles = memberRows.isEmpty ? [] : await client.from('profiles')
+        .select('id, display_name')
+        .inFilter('id', memberRows.map((m) => m['user_id'].toString()).toList());
+      final names = {for (final p in profiles) p['id'].toString(): p['display_name']?.toString()};
+      final branches = List<Map<String, dynamic>>.from(branchRows);
+      final members = List<Map<String, dynamic>>.from(memberRows);
+      for (final member in members) {
+        member['display_name'] = names[member['user_id'].toString()];
+      }
+      if (!mounted) return;
+      setState(() {
+        _branches = branches;
+        _members = members;
+        _branchId = branches.any((b) => b['id'] == _branchId) ? _branchId : (branches.isEmpty ? null : branches.first['id'].toString());
+        _membershipId = members.any((m) => m['id'] == _membershipId) ? _membershipId : (members.isEmpty ? null : members.first['id'].toString());
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'তথ্য লোড করা যায়নি: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _assign() async {
+    if (_branchId == null || _membershipId == null) return;
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.rpc('set_member_primary_branch', params: {
+        'p_organization_id': widget.organizationId,
+        'p_membership_id': _membershipId,
+        'p_branch_id': _branchId,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('সদস্যের primary branch আপডেট হয়েছে।')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Branch assignment পরিবর্তন হয়নি: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('সদস্যের শাখা নির্ধারণ'), actions: [
+      IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+    ]),
+    body: _loading ? const Center(child: CircularProgressIndicator())
+      : _error != null ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Text(_error!)))
+      : ListView(padding: const EdgeInsets.all(20), children: [
+          const Text('একজন active সদস্যের primary branch নির্বাচন করুন। পরিবর্তনটি database transaction-এর মাধ্যমে atomic ভাবে সংরক্ষিত হবে।'),
+          const SizedBox(height: 16),
+          if (_members.isEmpty || _branches.isEmpty)
+            const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('সদস্য বা active branch পাওয়া যায়নি।')))
+          else ...[
+            DropdownButtonFormField<String>(
+              initialValue: _membershipId,
+              decoration: const InputDecoration(labelText: 'সদস্য'),
+              items: [for (final m in _members) DropdownMenuItem(
+                value: m['id'].toString(),
+                child: Text('${m['display_name'] ?? m['member_code']} · ${m['member_code']}'),
+              )],
+              onChanged: _saving ? null : (v) => setState(() => _membershipId = v),
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: _branchId,
+              decoration: const InputDecoration(labelText: 'Primary branch'),
+              items: [for (final b in _branches) DropdownMenuItem(
+                value: b['id'].toString(),
+                child: Text('${b['name']} · ${b['branch_code']}'),
+              )],
+              onChanged: _saving ? null : (v) => setState(() => _branchId = v),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _saving ? null : _assign,
+              icon: const Icon(Icons.save_outlined),
+              label: Text(_saving ? 'সংরক্ষণ হচ্ছে...' : 'Primary branch সংরক্ষণ'),
+            ),
+          ],
+        ]),
   );
 }
