@@ -1348,9 +1348,11 @@ class _FinancialWorkspacePageState extends State<FinancialWorkspacePage> {
         'p_decision': decision,
         'p_note': note.text.trim().isEmpty ? null : note.text.trim(),
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(decision == 'approved' ? 'লেনদেন অনুমোদিত হয়েছে।' : 'লেনদেন বাতিল হয়েছে।')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(decision == 'approved' ? 'লেনদেন অনুমোদিত হয়েছে।' : 'লেনদেন বাতিল হয়েছে।')),
+        );
+      }
       await _load();
     } catch (e) {
       if (mounted) {
