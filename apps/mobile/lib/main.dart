@@ -2418,13 +2418,17 @@ class _BranchManagementPageState extends State<BranchManagementPage> {
         'created_by': userId,
       });
       _refresh();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('নতুন শাখা তৈরি হয়েছে।')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('নতুন শাখা তৈরি হয়েছে।')),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('শাখা তৈরি করা যায়নি: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('শাখা তৈরি করা যায়নি: $e')),
+        );
+      }
     } finally {
       code.dispose(); name.dispose(); address.dispose(); phone.dispose();
       if (mounted) setState(() => _saving = false);
@@ -2445,9 +2449,11 @@ class _BranchManagementPageState extends State<BranchManagementPage> {
         .eq('organization_id', widget.organizationId).eq('id', branch['id']);
       _refresh();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('শাখার অবস্থা পরিবর্তন হয়নি: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('শাখার অবস্থা পরিবর্তন হয়নি: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
