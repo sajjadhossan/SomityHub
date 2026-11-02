@@ -242,7 +242,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             validator: (v) => (v?.trim().length ?? 0) < 2 ? 'খাত লিখুন।' : null),
           TextFormField(controller: amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'পরিমাণ'),
             validator: (v) => (num.tryParse(v ?? '') ?? 0) <= 0 ? 'সঠিক পরিমাণ দিন।' : null),
-          DropdownButtonFormField<String>(value: branch, decoration: const InputDecoration(labelText: 'শাখা'),
+          DropdownButtonFormField<String>(initialValue: branch, decoration: const InputDecoration(labelText: 'শাখা'),
             items: [for (final b in _branches) DropdownMenuItem(value: b['id'].toString(), child: Text(b['name'].toString()))],
             onChanged: (v) => setDialog(() => branch = v ?? branch)),
           TextFormField(controller: description, maxLines: 2, decoration: const InputDecoration(labelText: 'বিবরণ'),
@@ -351,7 +351,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             ? const Text('এই শাখায় কোনো সদস্য পাওয়া যায়নি।')
             : ListView(shrinkWrap: true, children: [for (final m in members)
               DropdownButtonFormField<String>(
-                value: (existing[m['id'].toString()]?['attendance_status'] ?? 'present').toString(),
+                initialValue: (existing[m['id'].toString()]?['attendance_status'] ?? 'present').toString(),
                 decoration: InputDecoration(labelText: m['member_code'].toString()),
                 items: const [
                   DropdownMenuItem(value: 'present', child: Text('উপস্থিত')),
