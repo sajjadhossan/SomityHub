@@ -20,6 +20,6 @@ dev_dependencies:
   flutter_lints: 5.0.0
 dependency_overrides:
   # Keep file_picker's Android subproject compatible with its API 34 compile SDK.
-  flutter_plugin_android_lifecycle: 2.0.33
+  flutter_plugin_android_lifecycle: 2.0.24
 flutter:
   uses-material-design: true
