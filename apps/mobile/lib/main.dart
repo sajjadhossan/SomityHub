@@ -1063,6 +1063,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                             ? 'আপনি সদস্য যোগ ও তথ্য পরিচালনা করতে পারবেন; পদ Admin নির্ধারণ করেন।'
                             : 'এই Member account-এ account যোগ বা পদ বদলের অনুমতি নেই। Admin account দিয়ে login করুন।'),
                   ),
+                  if (_isCommitteeAdmin) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _savingCommittee ? null : _editCommittee,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('সমিতির নাম ও লোগো সম্পাদনা'),
+                    ),
+                  ],
                   FilledButton.icon(
                     onPressed: _openMyMemberCard,
                     icon: const Icon(Icons.badge_outlined),
