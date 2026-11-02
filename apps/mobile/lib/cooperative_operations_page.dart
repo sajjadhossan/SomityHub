@@ -111,9 +111,11 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   )['member_code'].toString();
 
   Future<void> _messageError(Object e) async {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('কাজটি সম্পন্ন হয়নি: $e')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('কাজটি সম্পন্ন হয়নি: $e')),
+      );
+    }
   }
 
   Future<void> _createLoan() async {
@@ -294,7 +296,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             validator: (v) => (v?.trim().length ?? 0) < 2 ? 'শিরোনাম লিখুন।' : null),
           TextFormField(controller: agenda, maxLines: 2, decoration: const InputDecoration(labelText: 'আলোচ্যসূচি')),
           TextFormField(controller: location, decoration: const InputDecoration(labelText: 'স্থান')),
-          DropdownButtonFormField<String>(value: branch, decoration: const InputDecoration(labelText: 'শাখা'),
+          DropdownButtonFormField<String>(initialValue: branch, decoration: const InputDecoration(labelText: 'শাখা'),
             items: [for (final b in _branches) DropdownMenuItem(value: b['id'].toString(), child: Text(b['name'].toString()))],
             onChanged: (v) => setDialog(() => branch = v ?? branch)),
           ListTile(contentPadding: EdgeInsets.zero, title: const Text('সভার তারিখ ও সময়'),
