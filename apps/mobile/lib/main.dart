@@ -612,9 +612,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       throw Exception('এই account-টি এই সমিতির সদস্য নয়। Admin-এর কাছে account যোগ করতে বলুন।');
     }
     _currentMembershipId = actorRows.first['id'].toString();
-    _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
-    _currentRole = actorRows.first['role']?.toString() ?? 'member';
-    _canManageMembers = _isCommitteeAdmin || actorRows.first['role'] == 'manager';
+    final role = actorRows.first['role']?.toString() ?? 'member';
+    if (mounted) {
+      setState(() {
+        _isCommitteeAdmin = role == 'committee_admin';
+        _currentRole = role;
+        _canManageMembers = _isCommitteeAdmin || role == 'manager';
+      });
+    }
 
     final profileIds = members.map((member) => member['user_id'].toString()).toSet().toList();
     if (profileIds.isNotEmpty) {
@@ -1015,6 +1020,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                             ? 'আপনি সদস্য যোগ ও তথ্য পরিচালনা করতে পারবেন; পদ Admin নির্ধারণ করেন।'
                             : 'এই Member account-এ account যোগ বা পদ বদলের অনুমতি নেই। Admin account দিয়ে login করুন।'),
                   ),
+                  if (_isCommitteeAdmin) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _savingCommittee ? null : _editCommittee,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('সমিতির নাম ও লোগো সম্পাদনা'),
+                    ),
+                  ],
                   if (_canManageMembers)
                     FilledButton.icon(
                       onPressed: _savingMember ? null : _addMember,
