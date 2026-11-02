@@ -1,51 +1,55 @@
-# SomityHub Android app
+# SomityHub apps
 
-- Display name: SomityHub
-- Android application ID: com.somityhub.app
-- Flutter package: somityhub_app
-- Initial version: 1.0.0+1
+Flutter app packages:
 
-## Preview APKs after every GitHub push
+- Android application ID: `com.somityhub.app`
+- Desktop app name: SomityHub
+- Flutter package: `somityhub_app`
 
-The GitHub Actions workflow `.github/workflows/android-release.yml` runs on every push to `main`. It installs Flutter, runs static analysis and widget tests, then builds installable release APKs for supported Android CPU architectures.
+## Desktop builds on every push
 
-After a successful run:
+The GitHub Actions workflow `.github/workflows/desktop-release.yml` builds Windows x64, macOS Intel, and macOS Apple Silicon packages on pushes, pull requests, and manual runs.
 
-1. Open the repository on GitHub.
-2. Select **Actions**.
-3. Open the latest **Android APK Preview and Release** run.
-4. Under **Artifacts**, download the `SomityHub-APK-preview-...` ZIP.
-5. Extract the ZIP and install the APK matching your phone:
-   - Most modern Android phones: `arm64-v8a.apk`
-   - Older 32-bit ARM phones: `armeabi-v7a.apk`
-   - Android emulator / x86_64 devices: `x86_64.apk`
+- Pull request and branch builds are available in the run's **Artifacts** section for 30 days.
+- Pushes to `main` and version tags also publish desktop downloads on GitHub Releases.
+- The `desktop-latest` release contains stable filenames: `SomityHub-Windows-x64.zip`, `SomityHub-macOS-Intel.zip`, and `SomityHub-macOS-Apple-Silicon.zip`.
+- Extract the Windows ZIP and run `app.exe`.
+- Extract a Mac ZIP and open `SomityHub.app`. These Mac builds are unsigned; on first launch, Control-click the app and choose **Open**.
 
-The artifact is retained for 30 days. A failed build will not publish an APK; inspect the failed workflow logs instead.
+Every workflow run uses a higher build number. To create a named release, push a version tag such as `v1.2.3`.
 
-## Supabase GitHub Actions variables
+## Android APK builds and in-place updates
 
-At repository **Settings → Secrets and variables → Actions → Variables**, configure:
+The Android workflow builds a universal APK and architecture-specific APKs. The in-app **Check for updates** action downloads the universal APK from the `latest` release.
 
-- `SUPABASE_URL` = the existing Supabase project URL
-- `SUPABASE_PUBLISHABLE_KEY` = the Supabase publishable key (legacy anon key is also accepted)
+Android installs this as an update over the existing app and keeps its app data when all three values stay compatible:
 
-Only a publishable/anon key is allowed in the app. Never use a service-role key or database password in a mobile app, repository variable, or source file.
+1. Application ID remains `com.somityhub.app`.
+2. The new APK uses the same permanent signing key as the installed APK.
+3. The Android version code increases (GitHub Actions uses the run number).
+
+The current workflow requires a permanent release keystore. Configure these GitHub Actions repository secrets before an Android release:
+
+- `ANDROID_KEYSTORE_BASE64`: base64-encoded release keystore
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+Keep the same keystore for every later APK. Do not commit it to this repository. Older preview APKs built with temporary CI debug keys may not accept a differently signed update; install a permanent-key signed baseline before using in-place upgrades.
+
+The Android and desktop workflows also require these GitHub Actions repository variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY` (a publishable/anon key only; never use a service-role key)
 
 ## Local setup
 
-Install Flutter stable and Android SDK, then:
+Install Flutter stable and the platform tooling, then:
 
-```bash
+```sh
 cd apps/mobile
-flutter create --platforms=android --org com.somityhub --project-name app .
 flutter pub get
 flutter run \
   --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
 ```
-
-## Versioned GitHub Releases
-
-Push a semantic version tag such as `v1.0.0`. The same workflow builds the APKs, uploads them as an Actions artifact, and attaches them to a GitHub Release.
-
-The preview APKs use the generated Android project's default debug signing configuration for convenient testing. They are for preview/testing, not production Play Store distribution. Configure a private release keystore and keep it in GitHub Actions Secrets before production distribution. Never commit a keystore or its passwords.
