@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CooperativeOperationsPage extends StatefulWidget {
@@ -28,6 +29,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   List<Map<String, dynamic>> _vouchers = [];
   List<Map<String, dynamic>> _meetings = [];
   List<Map<String, dynamic>> _transactions = [];
+  List<Map<String, dynamic>> _receipts = [];
   String? _error;
 
   bool get _canManage => const ['committee_admin', 'manager'].contains(widget.role);
@@ -40,7 +42,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
     _load();
   }
 
@@ -70,6 +72,11 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
           ? db.from('financial_transactions').select('id,branch_id,transaction_type,amount,status,created_at')
               .eq('organization_id', widget.organizationId).order('created_at', ascending: false).limit(500)
           : Future.value(<Map<String, dynamic>>[]),
+        db.rpc('get_financial_receipts', params: {
+          'p_org_id': widget.organizationId,
+          'p_membership_id': _canFinance ? null : widget.membershipId,
+          'p_limit': 100,
+        }),
       ]);
       if (!mounted) return;
       setState(() {
@@ -80,6 +87,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
         _vouchers = List<Map<String, dynamic>>.from(results[4] as List);
         _meetings = List<Map<String, dynamic>>.from(results[5] as List);
         _transactions = List<Map<String, dynamic>>.from(results[6] as List);
+        _receipts = List<Map<String, dynamic>>.from(results[7] as List);
       });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -329,6 +337,54 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     title.dispose(); agenda.dispose(); location.dispose();
   }
 
+  Future<void> _showReceipt(Map<String, dynamic> receipt) async {
+    Map<String, dynamic>? verification;
+    var verifying = false;
+    await showDialog<void>(context: context, builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setDialog) => AlertDialog(
+        title: Text('রসিদ · ${receipt['receipt_number']}'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          QrImageView(data: receipt['verification_token'].toString(), size: 176),
+          Text(receipt['receipt_number'].toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('৳${_money(receipt['amount'])} · ${receipt['transaction_type']}'),
+          Text('ইস্যু: ${_date(receipt['issued_at'])}'),
+          if (verification != null) ...[
+            const Divider(),
+            Text('Verification: ${verification!['receipt_status']}',
+              style: TextStyle(fontWeight: FontWeight.bold,
+                color: verification!['receipt_status'] == 'valid' ? Colors.green : Colors.red)),
+            Text('${verification!['committee_name'] ?? ''}'),
+            Text('${verification!['currency_code'] ?? ''} ${verification!['amount'] ?? ''}'),
+          ],
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('বন্ধ')),
+          FilledButton(
+            onPressed: verifying ? null : () async {
+              setDialog(() => verifying = true);
+              try {
+                final result = await Supabase.instance.client.rpc('verify_financial_receipt',
+                  params: {'p_verification_token': receipt['verification_token']});
+                final rows = List<Map<String, dynamic>>.from(result as List);
+                if (dialogContext.mounted) setDialog(() {
+                  verification = rows.isEmpty ? {'receipt_status': 'not_found'} : rows.first;
+                  verifying = false;
+                });
+              } catch (e) {
+                if (dialogContext.mounted) setDialog(() {
+                  verification = {'receipt_status': 'error', 'committee_name': e.toString()};
+                  verifying = false;
+                });
+              }
+            },
+            child: verifying ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('রসিদ যাচাই করুন'),
+          ),
+        ],
+      ),
+    ));
+  }
+
   Future<void> _updateMeetingStatus(Map<String, dynamic> meeting, String status) async {
     try {
       await Supabase.instance.client.from('cooperative_meetings')
@@ -406,7 +462,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       appBar: AppBar(title: const Text('সমিতির কার্যক্রম'), actions: [
         IconButton(onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
       ], bottom: TabBar(controller: _tabs, isScrollable: true, tabs: const [
-        Tab(text: 'ঋণ'), Tab(text: 'ভাউচার'), Tab(text: 'সভা ও উপস্থিতি'), Tab(text: 'রিপোর্ট'), Tab(text: 'শাখা'),
+        Tab(text: 'ঋণ'), Tab(text: 'ভাউচার'), Tab(text: 'সভা ও উপস্থিতি'), Tab(text: 'রসিদ'), Tab(text: 'রিপোর্ট'), Tab(text: 'শাখা'),
       ])),
       body: _busy && _branches.isEmpty
         ? const Center(child: CircularProgressIndicator())
@@ -416,6 +472,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             _loansView(),
             _vouchersView(),
             _meetingsView(),
+            _receiptsView(),
             _reportsView(deposits, withdrawals, expenses, otherIncome, loanDisbursements, loanRepayments),
             _branchesView(),
           ]),
@@ -487,6 +544,18 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             const PopupMenuItem(value: 'cancelled', child: Text('সভা বাতিল')),
         ],
       ),
+    )),
+  ]);
+
+  Widget _receiptsView() => ListView(padding: const EdgeInsets.all(16), children: [
+    const Text('অনুমোদিত Deposit / Withdrawal-এর system-issued receipt', style: TextStyle(fontWeight: FontWeight.bold)),
+    if (_receipts.isEmpty) const ListTile(title: Text('এখনো কোনো রসিদ ইস্যু হয়নি।')),
+    for (final r in _receipts) Card(child: ListTile(
+      leading: const Icon(Icons.receipt_long_outlined),
+      title: Text(r['receipt_number'].toString()),
+      subtitle: Text('${r['transaction_type']} · ৳${_money(r['amount'])} · ${_date(r['issued_at'])}'),
+      trailing: const Icon(Icons.qr_code_2),
+      onTap: () => _showReceipt(r),
     )),
   ]);
 
