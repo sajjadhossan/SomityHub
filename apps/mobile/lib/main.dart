@@ -2578,13 +2578,17 @@ class _BranchMemberAssignmentPageState extends State<BranchMemberAssignmentPage>
         'p_membership_id': _membershipId,
         'p_branch_id': _branchId,
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('সদস্যের primary branch আপডেট হয়েছে।')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('সদস্যের primary branch আপডেট হয়েছে।')),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Branch assignment পরিবর্তন হয়নি: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Branch assignment পরিবর্তন হয়নি: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -2604,7 +2608,7 @@ class _BranchMemberAssignmentPageState extends State<BranchMemberAssignmentPage>
             const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('সদস্য বা active branch পাওয়া যায়নি।')))
           else ...[
             DropdownButtonFormField<String>(
-              value: _membershipId,
+              initialValue: _membershipId,
               decoration: const InputDecoration(labelText: 'সদস্য'),
               items: [for (final m in _members) DropdownMenuItem(
                 value: m['id'].toString(),
@@ -2614,7 +2618,7 @@ class _BranchMemberAssignmentPageState extends State<BranchMemberAssignmentPage>
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
-              value: _branchId,
+              initialValue: _branchId,
               decoration: const InputDecoration(labelText: 'Primary branch'),
               items: [for (final b in _branches) DropdownMenuItem(
                 value: b['id'].toString(),
