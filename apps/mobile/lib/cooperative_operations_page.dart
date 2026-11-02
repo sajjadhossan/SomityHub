@@ -180,7 +180,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     } catch (e) { await _messageError(e); }
   }
 
-  Future<void> _repayLoan(Map<String, dynamic> row) async {
+  Future<void> _disburseLoan(Map<String, dynamic> row) async {\n    final reference = TextEditingController();\n    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(\n      title: const Text('ঋণ বিতরণ নিশ্চিত করুন'),\n      content: TextField(controller: reference, decoration: const InputDecoration(labelText: 'Bank / transaction reference (ঐচ্ছিক)')),\n      actions: [\n        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),\n        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('বিতরণ রেকর্ড করুন')),\n      ],\n    ));\n    if (ok == true && mounted) {\n      try {\n        await Supabase.instance.client.rpc('disburse_cooperative_loan', params: {\n          'p_loan_id': row['id'],\n          'p_reference_number': reference.text.trim().isEmpty ? null : reference.text.trim(),\n        });\n        await _load();\n      } catch (e) { await _messageError(e); }\n    }\n    reference.dispose();\n  }\n\n  Future<void> _repayLoan(Map<String, dynamic> row) async {
     final amount = TextEditingController();
     final ref = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -373,7 +373,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     final approved = _transactions.where((r) => r['status'] == 'approved').toList();
     final deposits = approved.where((r) => r['transaction_type'] == 'deposit').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
     final withdrawals = approved.where((r) => r['transaction_type'] == 'withdrawal').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
-    final expenses = approved.where((r) => r['transaction_type'] == 'expense').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
+    final expenses = approved.where((r) => r['transaction_type'] == 'expense').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));\n    final otherIncome = approved.where((r) => r['transaction_type'] == 'income').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));\n    final loanDisbursements = approved.where((r) => r['transaction_type'] == 'loan_disbursement').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));\n    final loanRepayments = approved.where((r) => r['transaction_type'] == 'loan_repayment').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
     return Scaffold(
       appBar: AppBar(title: const Text('সমিতির কার্যক্রম'), actions: [
         IconButton(onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
@@ -388,7 +388,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
             _loansView(),
             _vouchersView(),
             _meetingsView(),
-            _reportsView(deposits, withdrawals, expenses),
+            _reportsView(deposits, withdrawals, expenses, otherIncome, loanDisbursements, loanRepayments),
             _branchesView(),
           ]),
     );
@@ -447,7 +447,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     )),
   ]);
 
-  Widget _reportsView(num deposits, num withdrawals, num expenses) => ListView(padding: const EdgeInsets.all(16), children: [
+  Widget _reportsView(num deposits, num withdrawals, num expenses, num otherIncome, num loanDisbursements, num loanRepayments) => ListView(padding: const EdgeInsets.all(16), children: [
     const Text('অনুমোদিত Financial Transaction Ledger', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
     const SizedBox(height: 8),
     _metric('সঞ্চয় / Deposit', deposits),
@@ -460,7 +460,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       dense: true, title: Text('${r['transaction_type']} · ৳${_money(r['amount'])}'),
       subtitle: Text('${_branchName(r['branch_id'])} · ${_date(r['created_at'])}'),
     ),
-    const Text('রিপোর্টটি financial_transactions-এর approved rows থেকে তৈরি। Loan ও voucher আলাদা workflow; voucher posting/loan disbursement ledger integration এখনো প্রয়োজন।', style: TextStyle(color: Colors.grey)),
+    const Text('রিপোর্টটি financial_transactions-এর approved rows থেকে তৈরি। Savings member balance ledger-এর বাইরে voucher ও loan cash movements সমিতির cash flow-তে অন্তর্ভুক্ত।', style: TextStyle(color: Colors.grey)),
   ]);
 
   List<Map<String, dynamic>> get approvedTransactions =>
