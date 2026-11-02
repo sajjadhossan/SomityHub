@@ -327,6 +327,16 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     title.dispose(); agenda.dispose(); location.dispose();
   }
 
+  Future<void> _updateMeetingStatus(Map<String, dynamic> meeting, String status) async {
+    try {
+      await Supabase.instance.client.from('cooperative_meetings')
+        .update({'status': status})
+        .eq('organization_id', widget.organizationId)
+        .eq('id', meeting['id']);
+      await _load();
+    } catch (e) { await _messageError(e); }
+  }
+
   Future<void> _attendance(Map<String, dynamic> meeting) async {
     try {
       final rows = await Supabase.instance.client.from('cooperative_attendance')
@@ -456,8 +466,19 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       title: Text(r['title'].toString()),
       subtitle: Text('${_date(r['starts_at'])} · ${_branchName(r['branch_id'])}\n${r['location'] ?? ''}\n${r['agenda'] ?? ''}'),
       isThreeLine: true,
-      trailing: IconButton(icon: const Icon(Icons.fact_check_outlined), tooltip: 'উপস্থিতি',
-        onPressed: () => _attendance(r)),
+      trailing: PopupMenuButton<String>(
+        onSelected: (value) {
+          if (value == 'attendance') _attendance(r);
+          if (value == 'completed' || value == 'cancelled') _updateMeetingStatus(r, value);
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: 'attendance', child: Text('উপস্থিতি নিন')),
+          if (_canManageMeetings && r['status'] == 'scheduled')
+            const PopupMenuItem(value: 'completed', child: Text('সভা সম্পন্ন')),
+          if (_canManageMeetings && r['status'] == 'scheduled')
+            const PopupMenuItem(value: 'cancelled', child: Text('সভা বাতিল')),
+        ],
+      ),
     )),
   ]);
 
