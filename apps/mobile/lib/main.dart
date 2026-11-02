@@ -1228,6 +1228,14 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                       icon: const Icon(Icons.account_tree_outlined),
                       label: const Text('শাখা ব্যবস্থাপনা'),
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => BranchMemberAssignmentPage(organizationId: widget.organizationId),
+                      )),
+                      icon: const Icon(Icons.people_alt_outlined),
+                      label: const Text('সদস্যের শাখা নির্ধারণ'),
+                    ),
                   ],
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -2499,5 +2507,128 @@ class _BranchManagementPageState extends State<BranchManagementPage> {
         );
       },
     ),
+  );
+}
+
+
+class BranchMemberAssignmentPage extends StatefulWidget {
+  const BranchMemberAssignmentPage({super.key, required this.organizationId});
+  final String organizationId;
+
+  @override
+  State<BranchMemberAssignmentPage> createState() => _BranchMemberAssignmentPageState();
+}
+
+class _BranchMemberAssignmentPageState extends State<BranchMemberAssignmentPage> {
+  List<Map<String, dynamic>> _branches = [];
+  List<Map<String, dynamic>> _members = [];
+  String? _branchId;
+  String? _membershipId;
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final client = Supabase.instance.client;
+      final branchRows = await client.from('organization_branches')
+        .select('id, name, branch_code, is_active')
+        .eq('organization_id', widget.organizationId)
+        .eq('is_active', true).order('name');
+      final memberRows = await client.from('committee_memberships')
+        .select('id, user_id, member_code, role')
+        .eq('organization_id', widget.organizationId)
+        .eq('is_active', true).order('member_code');
+      final profiles = memberRows.isEmpty ? [] : await client.from('profiles')
+        .select('id, display_name')
+        .inFilter('id', memberRows.map((m) => m['user_id'].toString()).toList());
+      final names = {for (final p in profiles) p['id'].toString(): p['display_name']?.toString()};
+      final branches = List<Map<String, dynamic>>.from(branchRows);
+      final members = List<Map<String, dynamic>>.from(memberRows);
+      for (final member in members) {
+        member['display_name'] = names[member['user_id'].toString()];
+      }
+      if (!mounted) return;
+      setState(() {
+        _branches = branches;
+        _members = members;
+        _branchId = branches.any((b) => b['id'] == _branchId) ? _branchId : (branches.isEmpty ? null : branches.first['id'].toString());
+        _membershipId = members.any((m) => m['id'] == _membershipId) ? _membershipId : (members.isEmpty ? null : members.first['id'].toString());
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'তথ্য লোড করা যায়নি: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _assign() async {
+    if (_branchId == null || _membershipId == null) return;
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.rpc('set_member_primary_branch', params: {
+        'p_organization_id': widget.organizationId,
+        'p_membership_id': _membershipId,
+        'p_branch_id': _branchId,
+      });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('সদস্যের primary branch আপডেট হয়েছে।')),
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Branch assignment পরিবর্তন হয়নি: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('সদস্যের শাখা নির্ধারণ'), actions: [
+      IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+    ]),
+    body: _loading ? const Center(child: CircularProgressIndicator())
+      : _error != null ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Text(_error!)))
+      : ListView(padding: const EdgeInsets.all(20), children: [
+          const Text('একজন active সদস্যের primary branch নির্বাচন করুন। পরিবর্তনটি database transaction-এর মাধ্যমে atomic ভাবে সংরক্ষিত হবে।'),
+          const SizedBox(height: 16),
+          if (_members.isEmpty || _branches.isEmpty)
+            const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('সদস্য বা active branch পাওয়া যায়নি।')))
+          else ...[
+            DropdownButtonFormField<String>(
+              value: _membershipId,
+              decoration: const InputDecoration(labelText: 'সদস্য'),
+              items: [for (final m in _members) DropdownMenuItem(
+                value: m['id'].toString(),
+                child: Text('${m['display_name'] ?? m['member_code']} · ${m['member_code']}'),
+              )],
+              onChanged: _saving ? null : (v) => setState(() => _membershipId = v),
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              value: _branchId,
+              decoration: const InputDecoration(labelText: 'Primary branch'),
+              items: [for (final b in _branches) DropdownMenuItem(
+                value: b['id'].toString(),
+                child: Text('${b['name']} · ${b['branch_code']}'),
+              )],
+              onChanged: _saving ? null : (v) => setState(() => _branchId = v),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _saving ? null : _assign,
+              icon: const Icon(Icons.save_outlined),
+              label: Text(_saving ? 'সংরক্ষণ হচ্ছে...' : 'Primary branch সংরক্ষণ'),
+            ),
+          ],
+        ]),
   );
 }
