@@ -95,7 +95,7 @@ class _MultiBranchMemberAssignmentPageState extends State<MultiBranchMemberAssig
           const Text('Active member বা branch পাওয়া যায়নি।')
         else ...[
           DropdownButtonFormField<String>(
-            value: _memberId,
+            initialValue: _memberId,
             decoration: const InputDecoration(labelText: 'সদস্য'),
             items: [for (final m in _members) DropdownMenuItem(
               value: m['id'].toString(), child: Text('${m['member_code']} · ${m['role']}'),
@@ -122,12 +122,17 @@ class _MultiBranchMemberAssignmentPageState extends State<MultiBranchMemberAssig
             ),
           const Divider(),
           const Text('Primary branch', style: TextStyle(fontWeight: FontWeight.bold)),
-          for (final b in _branches.where((b) => _selected.contains(b['id'].toString())))
-            RadioListTile<String>(
-              value: b['id'].toString(), groupValue: _primary,
-              title: Text(b['name'].toString()),
-              onChanged: _saving ? null : (v) => setState(() => _primary = v),
-            ),
+          RadioGroup<String>(
+            groupValue: _primary,
+            onChanged: _saving ? null : (v) => setState(() => _primary = v),
+            child: Column(children: [
+              for (final b in _branches.where((b) => _selected.contains(b['id'].toString())))
+                RadioListTile<String>(
+                  value: b['id'].toString(),
+                  title: Text(b['name'].toString()),
+                ),
+            ]),
+          ),
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: _saving ? null : _save,
             icon: _saving ? const SizedBox(width: 18,height: 18,child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save),
