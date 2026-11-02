@@ -260,11 +260,18 @@ jobs:
 
       - name: Verify permanent APK signing
         working-directory: apps/mobile
+        shell: bash
         run: |
           set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           test -f "$APK" || { echo "::error::ARM64 APK missing."; exit 1; }
-          apksigner verify --verbose --print-certs "$APK"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$APKSIGNER" || ! -x "$APKSIGNER" ]]; then
+            echo "::error::Android SDK build-tools apksigner was not found under $SDK_ROOT."
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
 
       - name: Prepare versioned APK files
         shell: bash
