@@ -72,11 +72,11 @@ class _CooperativeDocumentsPageState extends State<CooperativeDocumentsPage> {
       return;
     }
 
+
     final titleController = TextEditingController(
-      text: file.name.replaceFirst(RegExp(r'\\.[^.]+
-    );
       text: file.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
-    var visibility = 'committee';
+    );
+    final typeController = TextEditingController(text: 'সাধারণ নথি');
     final formKey = GlobalKey<FormState>();
     final confirmed = await showDialog<bool>(
       context: context,
