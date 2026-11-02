@@ -420,6 +420,9 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     final details = member['details'] as Map<String, dynamic>?;
     final phone = TextEditingController(text: details?['phone']?.toString() ?? '');
     final address = TextEditingController(text: details?['address']?.toString() ?? '');
+    final dateOfBirth = TextEditingController(text: details?['date_of_birth']?.toString() ?? '');
+    final emergencyContact = TextEditingController(text: details?['emergency_contact']?.toString() ?? '');
+    final notes = TextEditingController(text: details?['notes']?.toString() ?? '');
     final formKey = GlobalKey<FormState>();
     final saved = await showDialog<bool>(
       context: context,
@@ -442,6 +445,30 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                   decoration: const InputDecoration(labelText: 'ঠিকানা (ঐচ্ছিক)'),
                   maxLines: 3,
                   maxLength: 300,
+                ),
+                TextFormField(
+                  controller: dateOfBirth,
+                  decoration: const InputDecoration(labelText: 'জন্মতারিখ (YYYY-MM-DD, ঐচ্ছিক)'),
+                  keyboardType: TextInputType.datetime,
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty) return null;
+                    final parsed = DateTime.tryParse(text);
+                    return parsed != null && RegExp(r'^\\d{4}-\\d{2}-\\d{2}$').hasMatch(text)
+                        ? null : 'YYYY-MM-DD ফরম্যাটে তারিখ দিন।';
+                  },
+                  maxLength: 10,
+                ),
+                TextFormField(
+                  controller: emergencyContact,
+                  decoration: const InputDecoration(labelText: 'জরুরি যোগাযোগ (ঐচ্ছিক)'),
+                  maxLength: 120,
+                ),
+                TextFormField(
+                  controller: notes,
+                  decoration: const InputDecoration(labelText: 'নোট (ঐচ্ছিক)'),
+                  maxLines: 3,
+                  maxLength: 1000,
                 ),
               ],
             ),
@@ -470,6 +497,9 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
       final values = {
         'phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
         'address': address.text.trim().isEmpty ? null : address.text.trim(),
+        'date_of_birth': dateOfBirth.text.trim().isEmpty ? null : dateOfBirth.text.trim(),
+        'emergency_contact': emergencyContact.text.trim().isEmpty ? null : emergencyContact.text.trim(),
+        'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
       };
       final existing = member['details'] as Map<String, dynamic>?;
       if (existing == null) {
@@ -499,6 +529,9 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     } finally {
       phone.dispose();
       address.dispose();
+      dateOfBirth.dispose();
+      emergencyContact.dispose();
+      notes.dispose();
     }
   }
 
