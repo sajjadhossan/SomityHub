@@ -57,7 +57,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     setState(() { _busy = true; _error = null; });
     try {
       final db = Supabase.instance.client;
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
         db.from('organization_branches').select('id,name,branch_code,is_default,is_active')
           .eq('organization_id', widget.organizationId).eq('is_active', true).order('is_default', ascending: false),
         db.from('committee_memberships').select('id,member_code,user_id,role')
@@ -370,15 +370,19 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
                 final result = await Supabase.instance.client.rpc('verify_financial_receipt',
                   params: {'p_verification_token': receipt['verification_token']});
                 final rows = List<Map<String, dynamic>>.from(result as List);
-                if (dialogContext.mounted) setDialog(() {
-                  verification = rows.isEmpty ? {'receipt_status': 'not_found'} : rows.first;
-                  verifying = false;
-                });
+                if (dialogContext.mounted) {
+                  setDialog(() {
+                    verification = rows.isEmpty ? {'receipt_status': 'not_found'} : rows.first;
+                    verifying = false;
+                  });
+                }
               } catch (e) {
-                if (dialogContext.mounted) setDialog(() {
-                  verification = {'receipt_status': 'error', 'committee_name': e.toString()};
-                  verifying = false;
-                });
+                if (dialogContext.mounted) {
+                  setDialog(() {
+                    verification = {'receipt_status': 'error', 'committee_name': e.toString()};
+                    verifying = false;
+                  });
+                }
               }
             },
             child: verifying ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
