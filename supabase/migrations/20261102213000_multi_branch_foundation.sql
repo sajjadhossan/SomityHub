@@ -31,8 +31,8 @@ create table if not exists public.membership_branch_assignments (
   assigned_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
   constraint membership_branch_assignments_membership_fk
-    foreign key (membership_id, organization_id)
-    references public.committee_memberships(id, organization_id) on delete cascade,
+    foreign key (organization_id, membership_id)
+    references public.committee_memberships(organization_id, id) on delete cascade,
   constraint membership_branch_assignments_branch_fk
     foreign key (organization_id, branch_id)
     references public.organization_branches(organization_id, id) on delete cascade,
