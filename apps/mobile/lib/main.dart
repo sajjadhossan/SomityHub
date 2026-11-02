@@ -365,6 +365,14 @@ class CommitteeWorkspacePage extends StatefulWidget {
 
 class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   late Future<List<Map<String, dynamic>>> _members;
+  final _searchController = TextEditingController();
+  String _statusFilter = 'all';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -393,6 +401,133 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   }
 
   void _refresh() => setState(() => _members = _loadMembers());
+
+  Future<void> _editMemberDetails(Map<String, dynamic> member) async {
+    final details = member['details'] as Map<String, dynamic>?;
+    final phone = TextEditingController(text: details?['phone']?.toString() ?? '');
+    final address = TextEditingController(text: details?['address']?.toString() ?? '');
+    final formKey = GlobalKey<FormState>();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('সদস্যের তথ্য · ${member['member_code'] ?? ''}'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: phone,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'মোবাইল (ঐচ্ছিক)'),
+                  maxLength: 32,
+                ),
+                TextFormField(
+                  controller: address,
+                  decoration: const InputDecoration(labelText: 'ঠিকানা (ঐচ্ছিক)'),
+                  maxLines: 3,
+                  maxLength: 300,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true);
+            },
+            child: const Text('সংরক্ষণ করুন'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true || !mounted) {
+      phone.dispose();
+      address.dispose();
+      return;
+    }
+
+    try {
+      final client = Supabase.instance.client;
+      final values = {
+        'phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
+        'address': address.text.trim().isEmpty ? null : address.text.trim(),
+      };
+      final existing = member['details'] as Map<String, dynamic>?;
+      if (existing == null) {
+        await client.from('member_details').insert({
+          'organization_id': widget.organizationId,
+          'membership_id': member['id'],
+          ...values,
+        });
+      } else {
+        await client.from('member_details')
+            .update(values)
+            .eq('membership_id', member['id'])
+            .eq('organization_id', widget.organizationId);
+      }
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('সদস্যের তথ্য আপডেট হয়েছে।')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('সদস্যের তথ্য আপডেট করা যায়নি: $e')),
+        );
+      }
+    } finally {
+      phone.dispose();
+      address.dispose();
+    }
+  }
+
+  Future<void> _setMemberActive(Map<String, dynamic> member, bool active) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(active ? 'সদস্য সক্রিয় করবেন?' : 'সদস্য নিষ্ক্রিয় করবেন?'),
+        content: Text(
+          '${member['member_code'] ?? 'এই সদস্য'}-কে ${active ? 'আবার সক্রিয়' : 'নিষ্ক্রিয়'} করা হবে।',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(active ? 'সক্রিয় করুন' : 'নিষ্ক্রিয় করুন'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await Supabase.instance.client.from('committee_memberships')
+          .update({'is_active': active})
+          .eq('id', member['id'])
+          .eq('organization_id', widget.organizationId)
+          .select('id')
+          .single();
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(active ? 'সদস্য সক্রিয় হয়েছে।' : 'সদস্য নিষ্ক্রিয় হয়েছে।'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('সদস্যের অবস্থা বদলানো যায়নি: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _addMember() async {
     final formKey = GlobalKey<FormState>();
@@ -507,8 +642,20 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
           );
         }
 
-        final members = snapshot.data ?? [];
-        final activeCount = members.where((member) => member['is_active'] == true).length;
+        final allMembers = snapshot.data ?? [];
+        final activeCount = allMembers.where((member) => member['is_active'] == true).length;
+        final query = _searchController.text.trim().toLowerCase();
+        final members = allMembers.where((member) {
+          final isActive = member['is_active'] == true;
+          if (_statusFilter == 'active' && !isActive) return false;
+          if (_statusFilter == 'inactive' && isActive) return false;
+          if (query.isEmpty) return true;
+          final details = member['details'] as Map<String, dynamic>?;
+          final searchable = [
+            member['member_code'], member['role'], details?['phone'], details?['address'],
+          ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+          return searchable.contains(query);
+        }).toList();
 
         return RefreshIndicator(
           onRefresh: () async => _refresh(),
@@ -547,10 +694,50 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
               const SizedBox(height: 12),
               const Text('সদস্য তালিকা', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              if (members.isEmpty)
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  labelText: 'সদস্য খুঁজুন',
+                  hintText: 'Member Code, মোবাইল বা ঠিকানা',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'মুছে ফেলুন',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _statusFilter,
+                decoration: const InputDecoration(
+                  labelText: 'সদস্যের অবস্থা',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('সব সদস্য')),
+                  DropdownMenuItem(value: 'active', child: Text('সক্রিয় সদস্য')),
+                  DropdownMenuItem(value: 'inactive', child: Text('নিষ্ক্রিয় সদস্য')),
+                ],
+                onChanged: (value) => setState(() => _statusFilter = value ?? 'all'),
+              ),
+              const SizedBox(height: 8),
+              if (allMembers.isEmpty)
                 const Card(child: Padding(
                   padding: EdgeInsets.all(20),
                   child: Text('এখনো কোনো সদস্য যোগ করা হয়নি।'),
+                ))
+              else if (members.isEmpty)
+                const Card(child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('এই খোঁজ বা ফিল্টারে কোনো সদস্য পাওয়া যায়নি।'),
                 )),
               for (final member in members)
                 Card(child: ListTile(
@@ -566,7 +753,37 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     if ((member['details']?['address'] ?? '').toString().isNotEmpty)
                       member['details']['address'].toString(),
                   ].join(' · ')),
-                  trailing: const Icon(Icons.badge_outlined),
+                  trailing: PopupMenuButton<String>(
+                    tooltip: 'সদস্যের কাজ',
+                    onSelected: (action) {
+                      if (action == 'edit') _editMemberDetails(member);
+                      if (action == 'toggle') {
+                        _setMemberActive(member, member['is_active'] != true);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('ফোন ও ঠিকানা সম্পাদনা'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'toggle',
+                        child: ListTile(
+                          leading: Icon(member['is_active'] == true
+                              ? Icons.person_off_outlined
+                              : Icons.person_add_alt_1),
+                          title: Text(member['is_active'] == true
+                              ? 'নিষ্ক্রিয় করুন'
+                              : 'আবার সক্রিয় করুন'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
                 )),
             ],
           ),
