@@ -1,0 +1,216 @@
+name: Desktop App Preview and Release
+
+on:
+  push:
+    branches: ["**"]
+    tags:
+      - "v*.*.*"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version (for example 1.0.0). Leave blank for an automatic build version."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-apps-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows
+            label: Windows x64
+            suffix: windows-x64
+          - runner: macos-15-intel
+            platform: macos
+            label: macOS Intel
+            suffix: macos-intel
+          - runner: macos-latest
+            platform: macos
+            label: macOS Apple Silicon
+            suffix: macos-apple-silicon
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve build version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Version must follow semantic version format, for example 1.0.0"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable desktop target
+        if: matrix.platform == 'windows'
+        run: flutter config --enable-windows-desktop
+
+      - name: Enable desktop target
+        if: matrix.platform == 'macos'
+        run: flutter config --enable-macos-desktop
+
+      - name: Generate desktop platform project
+        working-directory: apps/mobile
+        run: flutter create --platforms=windows,macos --org com.somityhub --project-name app .
+
+      - name: Install Flutter dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      - name: Verify Supabase build variables
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$SUPABASE_URL" || {
+            echo "::error::Add Actions Variable SUPABASE_URL."
+            exit 1
+          }
+          test -n "$SUPABASE_PUBLISHABLE_KEY" || {
+            echo "::error::Add Actions Variable SUPABASE_PUBLISHABLE_KEY."
+            exit 1
+          }
+
+      - name: Build Windows app
+        if: matrix.platform == 'windows'
+        working-directory: apps/mobile
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build windows --release --build-name="${{ steps.version.outputs.version }}" --build-number="${{ github.run_number }}" --dart-define=SUPABASE_URL="$env:SUPABASE_URL" --dart-define=SUPABASE_PUBLISHABLE_KEY="$env:SUPABASE_PUBLISHABLE_KEY"
+          $package = Join-Path $env:RUNNER_TEMP "SomityHub-${{ steps.version.outputs.version }}-windows-x64"
+          New-Item -ItemType Directory -Path $package | Out-Null
+          Copy-Item "build/windows/x64/runner/Release/*" $package -Recurse
+          Compress-Archive -Path "$package/*" -DestinationPath "$package.zip"
+          "PACKAGE_PATH=$package.zip" >> $env:GITHUB_ENV
+
+      - name: Build macOS app
+        if: matrix.platform == 'macos'
+        working-directory: apps/mobile
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build macos --release --build-name="${{ steps.version.outputs.version }}" --build-number="${{ github.run_number }}" --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          APP="build/macos/Build/Products/Release/app.app"
+          test -d "$APP" || { echo "::error::macOS app bundle was not produced."; exit 1; }
+          python3 - "$APP/Contents/Info.plist" <<'PY'
+          import plistlib
+          import sys
+          from pathlib import Path
+
+          plist_path = Path(sys.argv[1])
+          with plist_path.open("rb") as source:
+              data = plistlib.load(source)
+          data["CFBundleName"] = "SomityHub"
+          data["CFBundleDisplayName"] = "SomityHub"
+          with plist_path.open("wb") as destination:
+              plistlib.dump(data, destination)
+          PY
+          mkdir -p "$RUNNER_TEMP/package"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/package/SomityHub-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SomityHub-${{ steps.version.outputs.version }}-${{ matrix.suffix }}
+          path: ${{ runner.os == 'Windows' && env.PACKAGE_PATH || format('{0}/package/*.zip', runner.temp) }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish desktop downloads
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve build version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download all desktop builds
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Prepare stable download names
+        shell: bash
+        run: |
+          mkdir -p latest-assets
+          cp release-assets/*-windows-x64.zip latest-assets/SomityHub-Windows-x64.zip
+          cp release-assets/*-macos-intel.zip latest-assets/SomityHub-macOS-Intel.zip
+          cp release-assets/*-macos-apple-silicon.zip latest-assets/SomityHub-macOS-Apple-Silicon.zip
+
+      - name: Publish versioned desktop release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && format('desktop-{0}', github.ref_name) || format('desktop-preview-build-{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ github.ref_type == 'tag' && format('SomityHub Desktop v{0}', steps.version.outputs.version) || format('SomityHub Desktop Preview Build {0}', github.run_number) }}
+          body: "Windows x64 and macOS Intel/Apple Silicon downloads. macOS builds are unsigned; on first launch, use Control-click → Open."
+          prerelease: ${{ github.ref_type != 'tag' }}
+          generate_release_notes: true
+          files: release-assets/*.zip
+
+      - name: Move stable desktop tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f desktop-latest "$GITHUB_SHA"
+          git push origin refs/tags/desktop-latest --force
+
+      - name: Publish stable desktop downloads
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          target_commitish: ${{ github.sha }}
+          name: SomityHub Desktop v${{ steps.version.outputs.version }}
+          body: "Latest Windows and macOS builds. macOS builds are unsigned; on first launch, use Control-click → Open."
+          prerelease: false
+          make_latest: false
+          overwrite_files: true
+          files: latest-assets/*.zip

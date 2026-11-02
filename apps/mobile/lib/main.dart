@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -196,6 +196,18 @@ class _CommitteePageState extends State<CommitteePage> {
 
   Future<void> _checkForUpdates() async {
     if (!mounted) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      final opened = await launchUrl(
+        Uri.parse('https://github.com/sajjadhossan/SomityHub/releases/tag/desktop-latest'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Desktop download page খোলা যায়নি।')),
+        );
+      }
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('নতুন version খোঁজা হচ্ছে...')),
     );
@@ -365,6 +377,18 @@ class CommitteeWorkspacePage extends StatefulWidget {
 
 class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   late Future<List<Map<String, dynamic>>> _members;
+  final _searchController = TextEditingController();
+  String _statusFilter = 'all';
+  String _currentUserId = '';
+  bool _canManageMembers = false;
+  bool _isCommitteeAdmin = false;
+  bool _savingMember = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -374,13 +398,26 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
 
   Future<List<Map<String, dynamic>>> _loadMembers() async {
     final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) throw Exception('Login session পাওয়া যায়নি।');
+    _currentUserId = user.id;
+
     final rows = await client.from('committee_memberships')
         .select('id, user_id, member_code, role, is_active, joined_at')
         .eq('organization_id', widget.organizationId)
         .order('joined_at', ascending: false);
     final members = List<Map<String, dynamic>>.from(rows);
+    final actorRows = members.where((member) =>
+        member['user_id'] == user.id && member['is_active'] == true).toList();
+    if (actorRows.isEmpty ||
+        !['committee_admin', 'manager'].contains(actorRows.first['role'])) {
+      throw Exception('এই Committee পরিচালনার জন্য Admin বা Manager permission প্রয়োজন।');
+    }
+    _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
+    _canManageMembers = true;
+
     final details = await client.from('member_details')
-        .select('membership_id, phone, address')
+        .select('membership_id, phone, address, date_of_birth, emergency_contact, notes')
         .eq('organization_id', widget.organizationId);
     final detailByMembership = <String, Map<String, dynamic>>{
       for (final row in details)
@@ -393,6 +430,194 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
   }
 
   void _refresh() => setState(() => _members = _loadMembers());
+
+  Future<void> _editMemberDetails(Map<String, dynamic> member) async {
+    final details = member['details'] as Map<String, dynamic>?;
+    final phone = TextEditingController(text: details?['phone']?.toString() ?? '');
+    final address = TextEditingController(text: details?['address']?.toString() ?? '');
+    final dateOfBirth = TextEditingController(text: details?['date_of_birth']?.toString() ?? '');
+    final emergencyContact = TextEditingController(text: details?['emergency_contact']?.toString() ?? '');
+    final notes = TextEditingController(text: details?['notes']?.toString() ?? '');
+    final formKey = GlobalKey<FormState>();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('সদস্যের তথ্য · ${member['member_code'] ?? ''}'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: phone,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'মোবাইল (ঐচ্ছিক)'),
+                  maxLength: 40,
+                ),
+                TextFormField(
+                  controller: address,
+                  decoration: const InputDecoration(labelText: 'ঠিকানা (ঐচ্ছিক)'),
+                  maxLines: 3,
+                  maxLength: 300,
+                ),
+                TextFormField(
+                  controller: dateOfBirth,
+                  decoration: const InputDecoration(labelText: 'জন্মতারিখ (YYYY-MM-DD, ঐচ্ছিক)'),
+                  keyboardType: TextInputType.datetime,
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty) return null;
+                    final match = RegExp(r'^([0-9]{4})-([0-9]{2})-([0-9]{2})$').firstMatch(text);
+                    if (match == null) return 'YYYY-MM-DD ফরম্যাটে তারিখ দিন।';
+                    final year = int.parse(match.group(1)!);
+                    final month = int.parse(match.group(2)!);
+                    final day = int.parse(match.group(3)!);
+                    final parsed = DateTime(year, month, day);
+                    return parsed.year == year && parsed.month == month && parsed.day == day
+                        ? null : 'সঠিক তারিখ দিন।';
+                  },
+                  maxLength: 10,
+                ),
+                TextFormField(
+                  controller: emergencyContact,
+                  decoration: const InputDecoration(labelText: 'জরুরি যোগাযোগ (ঐচ্ছিক)'),
+                  maxLength: 120,
+                ),
+                TextFormField(
+                  controller: notes,
+                  decoration: const InputDecoration(labelText: 'নোট (ঐচ্ছিক)'),
+                  maxLines: 3,
+                  maxLength: 1000,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true);
+            },
+            child: const Text('সংরক্ষণ করুন'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true || !mounted) {
+      phone.dispose();
+      address.dispose();
+      dateOfBirth.dispose();
+      emergencyContact.dispose();
+      notes.dispose();
+      return;
+    }
+
+    try {
+      final client = Supabase.instance.client;
+      final values = {
+        'phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
+        'address': address.text.trim().isEmpty ? null : address.text.trim(),
+        'date_of_birth': dateOfBirth.text.trim().isEmpty ? null : dateOfBirth.text.trim(),
+        'emergency_contact': emergencyContact.text.trim().isEmpty ? null : emergencyContact.text.trim(),
+        'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
+      };
+      final existing = member['details'] as Map<String, dynamic>?;
+      if (existing == null) {
+        await client.from('member_details').insert({
+          'organization_id': widget.organizationId,
+          'membership_id': member['id'],
+          ...values,
+        });
+      } else {
+        await client.from('member_details')
+            .update(values)
+            .eq('membership_id', member['id'])
+            .eq('organization_id', widget.organizationId);
+      }
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('সদস্যের তথ্য আপডেট হয়েছে।')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('সদস্যের তথ্য আপডেট করা যায়নি: $e')),
+        );
+      }
+    } finally {
+      phone.dispose();
+      address.dispose();
+      dateOfBirth.dispose();
+      emergencyContact.dispose();
+      notes.dispose();
+    }
+  }
+
+  Future<void> _changeMemberRole(Map<String, dynamic> member) async {
+    if (!_isCommitteeAdmin || member['user_id'] == _currentUserId) return;
+    const roles = [
+      ('committee_admin', 'Committee Admin'),
+      ('manager', 'Manager'),
+      ('treasurer', 'Treasurer'),
+      ('secretary', 'Secretary'),
+      ('auditor', 'Auditor'),
+      ('member', 'Member'),
+    ];
+    final newRole = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text('${member['member_code']} · Role নির্বাচন করুন'),
+        children: [
+          for (final role in roles)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, role.$1),
+              child: Text(role.$2),
+            ),
+        ],
+      ),
+    );
+    if (newRole == null || newRole == member['role'] || !mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Role পরিবর্তন করবেন?'),
+        content: Text('${member['member_code']}-এর role ${member['role']} থেকে $newRole করা হবে।'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('বাতিল')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('পরিবর্তন করুন')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _savingMember = true);
+    try {
+      await Supabase.instance.client.rpc('admin_update_committee_member_role', params: {
+        'p_organization_id': widget.organizationId,
+        'p_membership_id': member['id'],
+        'p_new_role': newRole,
+      });
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${member['member_code']}-এর role আপডেট হয়েছে।'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Role আপডেট করা যায়নি: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingMember = false);
+    }
+  }
 
   Future<void> _addMember() async {
     final formKey = GlobalKey<FormState>();
@@ -485,11 +710,11 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
         IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
       ],
     ),
-    floatingActionButton: FloatingActionButton.extended(
+    floatingActionButton: _canManageMembers ? FloatingActionButton.extended(
       onPressed: _addMember,
       icon: const Icon(Icons.person_add_alt_1),
       label: const Text('সদস্য যোগ করুন'),
-    ),
+    ) : null,
     body: FutureBuilder<List<Map<String, dynamic>>>(
       future: _members,
       builder: (context, snapshot) {
@@ -507,8 +732,21 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
           );
         }
 
-        final members = snapshot.data ?? [];
-        final activeCount = members.where((member) => member['is_active'] == true).length;
+        final allMembers = snapshot.data ?? [];
+        final activeCount = allMembers.where((member) => member['is_active'] == true).length;
+        final query = _searchController.text.trim().toLowerCase();
+        final members = allMembers.where((member) {
+          final isActive = member['is_active'] == true;
+          if (_statusFilter == 'active' && !isActive) return false;
+          if (_statusFilter == 'inactive' && isActive) return false;
+          if (query.isEmpty) return true;
+          final details = member['details'] as Map<String, dynamic>?;
+          final searchable = [
+            member['member_code'], member['role'], details?['phone'], details?['address'],
+            details?['date_of_birth'], details?['emergency_contact'], details?['notes'],
+          ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+          return searchable.contains(query);
+        }).toList();
 
         return RefreshIndicator(
           onRefresh: () async => _refresh(),
@@ -527,7 +765,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text('মোট সদস্য'),
-                            Text(members.length.toString(), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                            Text(allMembers.length.toString(), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -545,12 +783,50 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 ),
               ),
               const SizedBox(height: 12),
+              const Text('সদস্যসংখ্যার কোনো সীমা নেই। Member Code সিস্টেম থেকে স্বয়ংক্রিয়ভাবে তৈরি হয়।',
+                style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 8),
               const Text('সদস্য তালিকা', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              if (members.isEmpty)
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  labelText: 'সদস্য খুঁজুন',
+                  hintText: 'Member Code, মোবাইল, ঠিকানা বা অন্যান্য তথ্য',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchController.text.isEmpty ? null : IconButton(
+                    tooltip: 'মুছে ফেলুন',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.clear),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _statusFilter,
+                decoration: const InputDecoration(labelText: 'সদস্যের অবস্থা'),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('সব সদস্য')),
+                  DropdownMenuItem(value: 'active', child: Text('সক্রিয় সদস্য')),
+                  DropdownMenuItem(value: 'inactive', child: Text('নিষ্ক্রিয় সদস্য')),
+                ],
+                onChanged: (value) => setState(() => _statusFilter = value ?? 'all'),
+              ),
+              const SizedBox(height: 8),
+              if (allMembers.isEmpty)
                 const Card(child: Padding(
                   padding: EdgeInsets.all(20),
                   child: Text('এখনো কোনো সদস্য যোগ করা হয়নি।'),
+                ))
+              else if (members.isEmpty)
+                const Card(child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('এই খোঁজ বা ফিল্টারে কোনো সদস্য পাওয়া যায়নি।'),
                 )),
               for (final member in members)
                 Card(child: ListTile(
@@ -566,7 +842,34 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                     if ((member['details']?['address'] ?? '').toString().isNotEmpty)
                       member['details']['address'].toString(),
                   ].join(' · ')),
-                  trailing: const Icon(Icons.badge_outlined),
+                  trailing: PopupMenuButton<String>(
+                    tooltip: 'সদস্যের কাজ',
+                    onSelected: (action) {
+                      if (action == 'edit') _editMemberDetails(member);
+                      if (action == 'role') _changeMemberRole(member);
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        enabled: _canManageMembers && !_savingMember,
+                        child: const ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('সদস্যের তথ্য সম্পাদনা'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      if (_isCommitteeAdmin && member['user_id'] != _currentUserId)
+                        PopupMenuItem(
+                          value: 'role',
+                          enabled: !_savingMember,
+                          child: const ListTile(
+                            leading: Icon(Icons.admin_panel_settings_outlined),
+                            title: Text('Role পরিবর্তন'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                    ],
+                  ),
                 )),
             ],
           ),
