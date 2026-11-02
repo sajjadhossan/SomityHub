@@ -78,6 +78,7 @@ class _CooperativeDocumentsPageState extends State<CooperativeDocumentsPage> {
     );
     final typeController = TextEditingController(text: 'সাধারণ নথি');
     final formKey = GlobalKey<FormState>();
+    String visibility = 'committee';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
