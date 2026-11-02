@@ -384,7 +384,10 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     final approved = _transactions.where((r) => r['status'] == 'approved').toList();
     final deposits = approved.where((r) => r['transaction_type'] == 'deposit').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
     final withdrawals = approved.where((r) => r['transaction_type'] == 'withdrawal').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
-    final expenses = approved.where((r) => r['transaction_type'] == 'expense').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));\n    final otherIncome = approved.where((r) => r['transaction_type'] == 'income').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));\n    final loanDisbursements = approved.where((r) => r['transaction_type'] == 'loan_disbursement').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));\n    final loanRepayments = approved.where((r) => r['transaction_type'] == 'loan_repayment').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
+    final expenses = approved.where((r) => r['transaction_type'] == 'expense').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
+    final otherIncome = approved.where((r) => r['transaction_type'] == 'income').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
+    final loanDisbursements = approved.where((r) => r['transaction_type'] == 'loan_disbursement').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
+    final loanRepayments = approved.where((r) => r['transaction_type'] == 'loan_repayment').fold<num>(0, (s, r) => s + ((r['amount'] as num?) ?? 0));
     return Scaffold(
       appBar: AppBar(title: const Text('সমিতির কার্যক্রম'), actions: [
         IconButton(onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
@@ -421,7 +424,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
         if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
         if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
         if (_canReviewFinance && r['status'] == 'approved') const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
-        if (_canFinance && ['approved','disbursed'].contains(r['status'])) const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
+        if (_canProcessLoanCash && r['status'] == 'disbursed') const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
       ]),
     )),
   ]);
