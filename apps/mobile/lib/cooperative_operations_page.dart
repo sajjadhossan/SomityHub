@@ -170,18 +170,28 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   }
 
   Future<void> _disburseLoan(Map<String, dynamic> row) async {
-    try {
-      await Supabase.instance.client.rpc('disburse_cooperative_loan', params: {
-        'p_loan_id': row['id'],
-      });
-      await _load();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ঋণ বিতরণ নথিভুক্ত হয়েছে।')),
-      );
-    } catch (e) { await _messageError(e); }
+    final reference = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('ঋণ বিতরণ নিশ্চিত করুন'),
+      content: TextField(controller: reference, decoration: const InputDecoration(labelText: 'Bank / transaction reference (ঐচ্ছিক)')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('বিতরণ রেকর্ড করুন')),
+      ],
+    ));
+    if (ok == true && mounted) {
+      try {
+        await Supabase.instance.client.rpc('disburse_cooperative_loan', params: {
+          'p_loan_id': row['id'],
+          'p_reference_number': reference.text.trim().isEmpty ? null : reference.text.trim(),
+        });
+        await _load();
+      } catch (e) { await _messageError(e); }
+    }
+    reference.dispose();
   }
 
-  Future<void> _disburseLoan(Map<String, dynamic> row) async {\n    final reference = TextEditingController();\n    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(\n      title: const Text('ঋণ বিতরণ নিশ্চিত করুন'),\n      content: TextField(controller: reference, decoration: const InputDecoration(labelText: 'Bank / transaction reference (ঐচ্ছিক)')),\n      actions: [\n        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),\n        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('বিতরণ রেকর্ড করুন')),\n      ],\n    ));\n    if (ok == true && mounted) {\n      try {\n        await Supabase.instance.client.rpc('disburse_cooperative_loan', params: {\n          'p_loan_id': row['id'],\n          'p_reference_number': reference.text.trim().isEmpty ? null : reference.text.trim(),\n        });\n        await _load();\n      } catch (e) { await _messageError(e); }\n    }\n    reference.dispose();\n  }\n\n  Future<void> _repayLoan(Map<String, dynamic> row) async {
+  Future<void> _repayLoan(Map<String, dynamic> row) async {
     final amount = TextEditingController();
     final ref = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
