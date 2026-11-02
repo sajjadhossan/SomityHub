@@ -402,7 +402,7 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     _isCommitteeAdmin = actorRows.first['role'] == 'committee_admin';
     _canManageMembers = true;
     final details = await client.from('member_details')
-        .select('membership_id, phone, address')
+        .select('membership_id, phone, address, date_of_birth, emergency_contact, notes')
         .eq('organization_id', widget.organizationId);
     final detailByMembership = <String, Map<String, dynamic>>{
       for (final row in details)
@@ -489,6 +489,9 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
     if (saved != true || !mounted) {
       phone.dispose();
       address.dispose();
+      dateOfBirth.dispose();
+      emergencyContact.dispose();
+      notes.dispose();
       return;
     }
 
@@ -755,6 +758,9 @@ class _CommitteeWorkspacePageState extends State<CommitteeWorkspacePage> {
                 ),
               ),
               const SizedBox(height: 12),
+              const Text('সদস্যসংখ্যার কোনো সীমা নেই। Member Code সিস্টেম থেকে স্বয়ংক্রিয়ভাবে তৈরি হয়।',
+                style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 8),
               const Text('সদস্য তালিকা', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               TextField(
