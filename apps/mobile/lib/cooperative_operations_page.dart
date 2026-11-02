@@ -470,8 +470,12 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       isThreeLine: true,
       trailing: PopupMenuButton<String>(
         onSelected: (value) {
-          if (value == 'attendance') _attendance(r);
-          if (value == 'completed' || value == 'cancelled') _updateMeetingStatus(r, value);
+          if (value == 'attendance') {
+            _attendance(r);
+          }
+          if (value == 'completed' || value == 'cancelled') {
+            _updateMeetingStatus(r, value);
+          }
         },
         itemBuilder: (_) => [
           const PopupMenuItem(value: 'attendance', child: Text('উপস্থিতি নিন')),
