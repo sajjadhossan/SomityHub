@@ -23,6 +23,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   bool _busy = false;
   List<Map<String, dynamic>> _branches = [];
   List<Map<String, dynamic>> _members = [];
+  List<Map<String, dynamic>> _assignments = [];
   List<Map<String, dynamic>> _loans = [];
   List<Map<String, dynamic>> _vouchers = [];
   List<Map<String, dynamic>> _meetings = [];
@@ -56,6 +57,8 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
           .eq('organization_id', widget.organizationId).eq('is_active', true).order('is_default', ascending: false),
         db.from('committee_memberships').select('id,member_code,user_id,role')
           .eq('organization_id', widget.organizationId).eq('is_active', true).order('member_code'),
+        db.from('membership_branch_assignments').select('membership_id,branch_id')
+          .eq('organization_id', widget.organizationId),
         db.from('cooperative_loans').select().eq('organization_id', widget.organizationId).order('created_at', ascending: false).limit(100),
         _canFinance
           ? db.from('cooperative_vouchers').select().eq('organization_id', widget.organizationId).order('transaction_date', ascending: false).limit(100)
@@ -70,10 +73,11 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       setState(() {
         _branches = List<Map<String, dynamic>>.from(results[0] as List);
         _members = List<Map<String, dynamic>>.from(results[1] as List);
-        _loans = List<Map<String, dynamic>>.from(results[2] as List);
-        _vouchers = List<Map<String, dynamic>>.from(results[3] as List);
-        _meetings = List<Map<String, dynamic>>.from(results[4] as List);
-        _transactions = List<Map<String, dynamic>>.from(results[5] as List);
+        _assignments = List<Map<String, dynamic>>.from(results[2] as List);
+        _loans = List<Map<String, dynamic>>.from(results[3] as List);
+        _vouchers = List<Map<String, dynamic>>.from(results[4] as List);
+        _meetings = List<Map<String, dynamic>>.from(results[5] as List);
+        _transactions = List<Map<String, dynamic>>.from(results[6] as List);
       });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -347,9 +351,9 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     } catch (e) { await _messageError(e); }
   }
 
-  List<String> _branchMemberIds(Object? branchId) => _members
-    .where((m) => m['id'] != null)
-    .map((m) => m['id'].toString()).toList();
+  List<String> _branchMemberIds(Object? branchId) => _assignments
+    .where((a) => a['branch_id'].toString() == branchId?.toString())
+    .map((a) => a['membership_id'].toString()).toSet().toList();
 
   @override
   Widget build(BuildContext context) {
