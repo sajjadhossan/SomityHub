@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -234,6 +236,15 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
     }
   }
 
+  String _newIdempotencyKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   Future<void> _repayLoan(Map<String, dynamic> row) async {
     final amount = TextEditingController();
     final ref = TextEditingController();
@@ -256,6 +267,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
           'p_loan_id': row['id'], 'p_amount': n,
           'p_payment_date': DateTime.now().toIso8601String().substring(0, 10),
           'p_reference_number': ref.text.trim().isEmpty ? null : ref.text.trim(),
+          'p_idempotency_key': _newIdempotencyKey(),
         });
         await _load();
       } catch (e) { await _messageError(e); }
