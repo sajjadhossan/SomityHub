@@ -93,10 +93,16 @@ jobs:
         working-directory: apps/mobile
         run: flutter build apk --debug
 
-      - name: Upload Android preview APK
+      - name: Prepare single canonical Android APK
+        working-directory: apps/mobile
+        run: |
+          mkdir -p build/delivery
+          cp build/app/outputs/flutter-apk/app-debug.apk build/delivery/SomityHub-Android.apk
+
+      - name: Upload the single Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: somityhub-android-preview-${{ github.sha }}
-          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+          name: SomityHub-Android-APK
+          path: apps/mobile/build/delivery/SomityHub-Android.apk
           if-no-files-found: error
           retention-days: 14
