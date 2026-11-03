@@ -1,45 +1,95 @@
-# SomityHub Android-Only Execution Rules
+# SomityHub — Central Agent Instructions & Handover
 
-These rules govern automated and agent-assisted work in this repository unless the repository owner explicitly changes the scope.
+This is the authoritative operating guide for ChatGPT and other coding agents working in this repository. Read it before inspecting or changing code. The repository owner may explicitly revise these rules.
 
-## Authorized scope
-- Work only on the Android application in `apps/mobile/` and files strictly required to build, test, sign, or deliver its Android APK.
-- Supabase schema, migrations, RPCs, and policies may be changed only when indispensable to the Android application's functionality. Keep those changes limited to the Android feature being implemented.
-- Android validation may include Flutter analysis, Flutter tests, Android APK builds, and Android-only GitHub Actions artifacts.
+## 1. Strict authorized scope
+- Work ONLY on the Android application in `apps/mobile/` and files strictly required to build, test, sign, or deliver its Android APK.
+- Do not work on Web, Next.js, Vercel, Windows, macOS, Linux desktop, or any other platform.
+- Supabase schema, migrations, RPCs, and policies may be changed only when indispensable to the Android feature being implemented, and only narrowly.
+- Do not merge pull requests, publish a stable/production release, change app versioning, or alter signing credentials/configuration unless explicitly authorized.
+- No unrelated refactors, dependency upgrades, optimizations, UI changes, or architecture changes.
 
-## Prohibited scope
-- Do not implement, modify, build, test, package, publish, or upload Web, Next.js, Vercel, Windows, macOS, Linux desktop, or any other non-Android application.
-- Do not create or publish desktop installers, web deployments, desktop previews, or non-Android release assets.
-- Do not modify non-Android application source, dependencies, configuration, deployment settings, or release processes as part of Android tasks.
-- Do not merge pull requests, publish production releases, or change app versioning/signing unless explicitly requested.
+## 2. GitHub Actions workflow policy
+Only these two workflows are authorized for automatic Android work:
+1. **Android App CI** — `.github/workflows/android-ci.yml`: Flutter analysis and tests only.
+2. **Android App Preview and Release** — `.github/workflows/android-release.yml`: builds, signs, verifies, and publishes the one Android APK.
+- These are the only workflows that should run automatically for Android branch/PR changes.
+- Web and desktop workflows must remain manual-only. Never dispatch them during Android-only work.
+- Do not create additional Android build workflows or duplicate pipelines without explicit approval.
+- Android build concurrency must cancel superseded runs.
+- Review changed files before every push. If a change is outside scope, stop and obtain approval.
 
-## GitHub and CI delivery rules
-- Push only changes required for the authorized Android task and indispensable Android backend changes.
-- Android CI may run automatically for Android changes and may upload only Android APK artifacts.
-- Web and desktop workflows must remain manual-only unless the repository owner explicitly authorizes those platforms.
-- Never manually dispatch Web or Desktop workflows during Android-only work.
-- Before reporting delivery, verify the exact commit SHA, Android test/build result, APK artifact name, and artifact association with that commit.
-- Never provide a stale APK as the latest build. State clearly whether the artifact is a debug/preview APK or a signed release APK.
+## 3. Single Android APK delivery policy
+- Produce exactly ONE installable, signed, universal APK containing ARMv7 (`android-arm`) and ARM64 (`android-arm64`) native libraries.
+- Canonical filename: `SomityHub-Android.apk`.
+- Publish it only as one asset on one GitHub Release. No duplicate copies, multiple ABI APKs, split APKs, AABs, Actions artifact copies, or alternate storage destinations.
+- Use the existing permanent release signing configuration in GitHub Actions Secrets. Never publish a debug-signed APK.
+- Branch builds may publish one GitHub prerelease. Version-tag builds may publish one normal release.
+- Never move or overwrite the existing `latest` tag/release automatically. A preview is not a stable production release.
+- Before sharing, verify release tag, commit SHA, status, exact asset name, asset count, and file size from GitHub.
 
-## Change control and verification
-- Make the smallest change that satisfies the requested Android task. Preserve unrelated behavior and files.
-- Do not refactor unrelated code or modify unrelated workflows.
-- Review the changed-file list before every push. If any changed file is outside the authorized scope, stop and obtain explicit authorization.
-- Run the relevant Android checks. Report any checks that could not be run and do not claim they passed.
+## 4. Required Android validation
+- Run applicable checks: `flutter pub get`, `flutter analyze`, `flutter test`, and release build when requested.
+- Verify APK signature and APK presence before publishing.
+- Report exact results. State checks that could not be performed. Never claim a test/build/device check passed without evidence.
 
+## 5. Change-control procedure
+1. Read this file; inspect current branch, latest commit, open PR, Android workflow runs, and Releases.
+2. Identify the smallest set of files required for the requested Android task.
+3. Make only requested changes; preserve unrelated behavior and files.
+4. Review diff and changed-file list before committing/pushing.
+5. Run Android checks and inspect CI/release logs.
+6. Verify resulting GitHub commit and, when requested, the single release asset.
+7. Update this handover with verified state and remaining work.
 
-## Single-APK delivery policy
-- For each Android CI run, produce and publish exactly one installable APK for the Android app.
-- Use the canonical filename `SomityHub-Android.apk` and the single artifact name `SomityHub-Android-APK`.
-- Upload only that one APK file. Do not upload duplicate copies, alternate filenames, APK variants, split APKs, AABs, or unrelated build outputs unless the repository owner explicitly requests a different Android distribution format.
-- Do not mirror the same APK to multiple servers, storage providers, or release destinations. Use the single configured GitHub Actions artifact destination.
-- When sharing a build, share only the APK artifact from the latest successful Android CI run for the current branch/commit. Do not send multiple run artifacts or stale builds as separate alternatives.
-- Keep Android build concurrency configured to cancel superseded runs so an older in-progress build does not compete with the newest build.
+## 6. Current project handover (2026-11-03)
 
+### Repository and active work
+- Repository: `sajjadhossan/SomityHub`
+- Active branch: `feature/android-cooperative-operations-1-8`
+- Verified branch HEAD at handover: `a8bd4645e62886523248c64248cb097d29ccfe8e`
+- Open work: draft PR #15, Android loan installment schedules and overdue tracking.
+- Base branch: `main`
+- PR #15 is not merged. Do not merge without explicit approval.
 
-## GitHub Release delivery (single universal APK)
-- Publish Android install builds only through one GitHub Release asset named `SomityHub-Android.apk`.
-- Build exactly one universal APK containing both `android-arm` (ARMv7/32-bit) and `android-arm64` (ARM64/64-bit) native libraries. Do not build or publish per-ABI APK variants, split APKs, AABs, or duplicate APK copies.
-- Do not upload APKs as separate Actions artifacts or mirror them to another server. Android CI is for analysis/tests; the Android release workflow is the only APK delivery path.
-- A non-tag build may create one prerelease with one APK. A version tag build may create one normal release with one APK. Do not move or overwrite the existing `latest` tag/release automatically.
-- Preserve permanent release signing. Never use a debug-signed APK as a production release.
+### Latest Android APK successfully published
+- Workflow: **Android App Preview and Release**
+- Run: #50 (run ID `41579450316`)
+- Commit: `a8bd4645e62886523248c64248cb097d29ccfe8e`
+- Result: success
+- Release tag: `android-preview-50`
+- Type: prerelease, NOT stable production
+- Version/build: `0.1.50+50`
+- Exactly one release asset: `SomityHub-Android.apk`
+- Size: 53,404,861 bytes (about 53.4 MB / 51 MiB)
+- Build targets: ARMv7 + ARM64
+- Permanent release signing verification: passed
+- Flutter analysis: passed (no issues found)
+- Flutter tests: passed
+- GitHub Release: https://github.com/sajjadhossan/SomityHub/releases/tag/android-preview-50
+- APK download: https://github.com/sajjadhossan/SomityHub/releases/download/android-preview-50/SomityHub-Android.apk
+
+### Current workflow roles
+- `.github/workflows/android-ci.yml`: analysis/tests only; no APK publishing.
+- `.github/workflows/android-release.yml`: sole APK build/sign/release pipeline.
+- `.github/workflows/web-ci.yml` and `.github/workflows/desktop-release.yml`: manual-only; do not run for Android tasks.
+
+### Next-chat continuation instructions
+When the owner says:
+“SomityHub repository-এর নির্দেশনা ও handover file পড়ো, তারপর পরবর্তী pending কাজ শুরু করো.”
+
+The next agent must:
+1. Read this entire `AGENTS.md` first.
+2. Fetch latest branch HEAD, PR #15, workflow runs, and Releases; do not assume this snapshot is current.
+3. Confirm the pending Android task with the owner if it is not explicit in the latest request.
+4. Continue only Android work under the strict scope above.
+5. Do not repeat completed work or re-upload an old APK. Build a new APK only when requested or required by the next authorized task.
+6. Update this handover after verified progress, including commit SHA, tests, release/run IDs, and remaining tasks.
+
+## 7. Delivery reporting
+Always distinguish:
+- code pushed vs. code merged;
+- preview prerelease vs. stable production release;
+- successful CI checks vs. APK build/sign/release;
+- APK built vs. APK independently installed/tested on a physical device.
+Never imply physical-device installation testing unless it occurred.
