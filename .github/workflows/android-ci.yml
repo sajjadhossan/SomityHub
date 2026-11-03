@@ -88,3 +88,15 @@ jobs:
       - name: Run widget tests
         working-directory: apps/mobile
         run: flutter test
+
+      - name: Build Android preview APK
+        working-directory: apps/mobile
+        run: flutter build apk --debug
+
+      - name: Upload Android preview APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: somityhub-android-preview-${{ github.sha }}
+          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
