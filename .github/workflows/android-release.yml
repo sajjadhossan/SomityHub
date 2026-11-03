@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - feature/android-cooperative-operations-1-8
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/android-release.yml"
     tags:
       - "v*.*.*"
   workflow_dispatch:
