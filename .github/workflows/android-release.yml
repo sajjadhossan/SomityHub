@@ -1,4 +1,4 @@
-name: Android APK Preview and Release
+name: Android App Preview and Release
 
 on:
   push:
