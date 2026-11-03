@@ -35,3 +35,11 @@ These rules govern automated and agent-assisted work in this repository unless t
 - Do not mirror the same APK to multiple servers, storage providers, or release destinations. Use the single configured GitHub Actions artifact destination.
 - When sharing a build, share only the APK artifact from the latest successful Android CI run for the current branch/commit. Do not send multiple run artifacts or stale builds as separate alternatives.
 - Keep Android build concurrency configured to cancel superseded runs so an older in-progress build does not compete with the newest build.
+
+
+## GitHub Release delivery (single universal APK)
+- Publish Android install builds only through one GitHub Release asset named `SomityHub-Android.apk`.
+- Build exactly one universal APK containing both `android-arm` (ARMv7/32-bit) and `android-arm64` (ARM64/64-bit) native libraries. Do not build or publish per-ABI APK variants, split APKs, AABs, or duplicate APK copies.
+- Do not upload APKs as separate Actions artifacts or mirror them to another server. Android CI is for analysis/tests; the Android release workflow is the only APK delivery path.
+- A non-tag build may create one prerelease with one APK. A version tag build may create one normal release with one APK. Do not move or overwrite the existing `latest` tag/release automatically.
+- Preserve permanent release signing. Never use a debug-signed APK as a production release.
