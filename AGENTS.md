@@ -24,8 +24,10 @@ Only these two workflows are authorized for automatic Android work:
 - Canonical filename: `SomityHub-Android.apk`.
 - Publish it only as one asset on one GitHub Release. No duplicate copies, multiple ABI APKs, split APKs, AABs, Actions artifact copies, or alternate storage destinations.
 - Use the existing permanent release signing configuration in GitHub Actions Secrets. Never publish a debug-signed APK.
-- Branch builds may publish one GitHub prerelease. Version-tag builds may publish one normal release.
-- Never move or overwrite the existing `latest` tag/release automatically. A preview is not a stable production release.
+- Branch builds are preview-only and may publish one GitHub prerelease. They must never be described as stable.
+- EVERY official Android version release must publish exactly one signed universal APK (`SomityHub-Android.apk`) as a normal, non-prerelease GitHub Release. The version-tag path (`v*.*.*`) is the official stable-release path and must remain enabled and functional.
+- Do not treat a preview build as an official release. To publish the current code as stable, create/push an authorized version tag and verify the resulting normal GitHub Release; do not merge a PR merely to publish an APK.
+- Do not silently overwrite an existing version tag or release. A new official release must use a new version tag. A preview is not a stable production release.
 - Before sharing, verify release tag, commit SHA, status, exact asset name, asset count, and file size from GitHub.
 
 ## 4. Required Android validation
@@ -47,27 +49,27 @@ Only these two workflows are authorized for automatic Android work:
 ### Repository and active work
 - Repository: `sajjadhossan/SomityHub`
 - Active branch: `feature/android-cooperative-operations-1-8`
-- Verified branch HEAD at handover: `a8bd4645e62886523248c64248cb097d29ccfe8e`
+- Verified branch HEAD at handover: `72ccdcfbfcf07deefaeae56709dece1d882491a8`
 - Open work: draft PR #15, Android loan installment schedules and overdue tracking.
 - Base branch: `main`
 - PR #15 is not merged. Do not merge without explicit approval.
 
 ### Latest Android APK successfully published
 - Workflow: **Android App Preview and Release**
-- Run: #50 (run ID `41579450316`)
-- Commit: `a8bd4645e62886523248c64248cb097d29ccfe8e`
+- Run: #51 (run ID `41580879891`)
+- Commit: `72ccdcfbfcf07deefaeae56709dece1d882491a8`
 - Result: success
-- Release tag: `android-preview-50`
+- Release tag: `android-preview-51`
 - Type: prerelease, NOT stable production
-- Version/build: `0.1.50+50`
 - Exactly one release asset: `SomityHub-Android.apk`
-- Size: 53,404,861 bytes (about 53.4 MB / 51 MiB)
-- Build targets: ARMv7 + ARM64
-- Permanent release signing verification: passed
-- Flutter analysis: passed (no issues found)
-- Flutter tests: passed
-- GitHub Release: https://github.com/sajjadhossan/SomityHub/releases/tag/android-preview-50
-- APK download: https://github.com/sajjadhossan/SomityHub/releases/download/android-preview-50/SomityHub-Android.apk
+- Size: 53,404,865 bytes (about 53.4 MB / 50.9 MiB)
+- SHA-256: `7db19acb49a1f750f42934290a420de577f1527e82afdcd61d36929ee2b03306`
+- Build targets: ARMv7 + ARM64 (one universal APK)
+- GitHub Release: https://github.com/sajjadhossan/SomityHub/releases/tag/android-preview-51
+- APK download: https://github.com/sajjadhossan/SomityHub/releases/download/android-preview-51/SomityHub-Android.apk
+- Android CI run #127 (run ID `41580883076`): success.
+- No stable release was created from this preview. Existing stable release `v0.1.46` was not modified.
+- Owner has now explicitly authorized stable APK publishing and set the rule that every official Android version release must publish the single APK as a normal GitHub Release. The current preview remains a prerelease until a new version tag triggers the stable-release workflow.
 
 ### Current workflow roles
 - `.github/workflows/android-ci.yml`: analysis/tests only; no APK publishing.
