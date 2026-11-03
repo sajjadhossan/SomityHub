@@ -28,7 +28,31 @@ void main() {
     );
   });
 
-  test('marks a partially paid installment as partial', () {
+  test('marks a future unpaid installment as upcoming', () {
+    expect(
+      loanInstallmentState(
+        amount: 100,
+        paidAmount: 0,
+        dueDate: DateTime(2026, 11, 4),
+        today: today,
+      ),
+      LoanInstallmentState.upcoming,
+    );
+  });
+
+  test('marks a partially paid installment with a future due date as partial', () {
+    expect(
+      loanInstallmentState(
+        amount: 100,
+        paidAmount: 25,
+        dueDate: DateTime(2026, 11, 10),
+        today: today,
+      ),
+      LoanInstallmentState.partial,
+    );
+  });
+
+  test('marks a partially paid installment past its due date as overdue', () {
     expect(
       loanInstallmentState(
         amount: 100,
@@ -36,7 +60,7 @@ void main() {
         dueDate: DateTime(2026, 11, 1),
         today: today,
       ),
-      LoanInstallmentState.partial,
+      LoanInstallmentState.overdue,
     );
   });
 
@@ -66,5 +90,6 @@ void main() {
 
   test('exposes Bengali status labels', () {
     expect(loanInstallmentStateLabel(LoanInstallmentState.overdue), 'মেয়াদোত্তীর্ণ');
+    expect(loanInstallmentStateLabel(LoanInstallmentState.upcoming), 'আসন্ন');
   });
 }
