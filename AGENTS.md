@@ -26,3 +26,12 @@ These rules govern automated and agent-assisted work in this repository unless t
 - Do not refactor unrelated code or modify unrelated workflows.
 - Review the changed-file list before every push. If any changed file is outside the authorized scope, stop and obtain explicit authorization.
 - Run the relevant Android checks. Report any checks that could not be run and do not claim they passed.
+
+
+## Single-APK delivery policy
+- For each Android CI run, produce and publish exactly one installable APK for the Android app.
+- Use the canonical filename `SomityHub-Android.apk` and the single artifact name `SomityHub-Android-APK`.
+- Upload only that one APK file. Do not upload duplicate copies, alternate filenames, APK variants, split APKs, AABs, or unrelated build outputs unless the repository owner explicitly requests a different Android distribution format.
+- Do not mirror the same APK to multiple servers, storage providers, or release destinations. Use the single configured GitHub Actions artifact destination.
+- When sharing a build, share only the APK artifact from the latest successful Android CI run for the current branch/commit. Do not send multiple run artifacts or stale builds as separate alternatives.
+- Keep Android build concurrency configured to cancel superseded runs so an older in-progress build does not compete with the newest build.
