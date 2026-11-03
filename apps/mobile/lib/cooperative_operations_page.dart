@@ -27,6 +27,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   List<Map<String, dynamic>> _assignments = [];
   List<Map<String, dynamic>> _loans = [];
   List<Map<String, dynamic>> _repayments = [];
+  List<Map<String, dynamic>> _installments = [];
   List<Map<String, dynamic>> _vouchers = [];
   List<Map<String, dynamic>> _meetings = [];
   List<Map<String, dynamic>> _transactions = [];
@@ -80,6 +81,9 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
         }),
         db.from('cooperative_loan_repayments').select('loan_id,amount,payment_date,reference_number')
           .eq('organization_id', widget.organizationId),
+        db.from('cooperative_loan_installments')
+          .select('id,loan_id,installment_no,due_date,amount,paid_amount')
+          .eq('organization_id', widget.organizationId).order('due_date'),
       ]);
       if (!mounted) return;
       setState(() {
@@ -92,6 +96,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
         _transactions = List<Map<String, dynamic>>.from(results[6] as List);
         _receipts = List<Map<String, dynamic>>.from(results[7] as List);
         _repayments = List<Map<String, dynamic>>.from(results[8] as List);
+        _installments = List<Map<String, dynamic>>.from(results[9] as List);
       });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -203,6 +208,29 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       } catch (e) { await _messageError(e); }
     }
     reference.dispose();
+  }
+
+
+  Future<void> _initializeLoanSchedule(Map<String, dynamic> row) async {
+    final today = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: today,
+      firstDate: DateTime(1970),
+      lastDate: DateTime(today.year, today.month, today.day),
+      helpText: 'প্রকৃত ঋণ বিতরণের তারিখ নির্বাচন করুন',
+      confirmText: 'Schedule তৈরি করুন',
+    );
+    if (selected == null || !mounted) return;
+    try {
+      await Supabase.instance.client.rpc('initialize_cooperative_loan_installment_schedule', params: {
+        'p_loan_id': row['id'],
+        'p_disbursement_date': '${selected.year.toString().padLeft(4, '0')}-${selected.month.toString().padLeft(2, '0')}-${selected.day.toString().padLeft(2, '0')}',
+      });
+      await _load();
+    } catch (e) {
+      await _messageError(e);
+    }
   }
 
   Future<void> _repayLoan(Map<String, dynamic> row) async {
@@ -488,26 +516,97 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   }
 
   Widget _loanCard(Map<String, dynamic> r) {
+    final loanInstallments = _installments
+      .where((item) => item['loan_id'].toString() == r['id'].toString())
+      .toList();
     final paid = _repayments.where((p) => p['loan_id'].toString() == r['id'].toString())
       .fold<num>(0, (sum, p) => sum + ((p['amount'] as num?) ?? 0));
-    final totalDue = ((r['principal_amount'] as num?) ?? 0) *
-      (1 + ((r['interest_rate'] as num?) ?? 0) / 100);
+    final totalDue = (((r['principal_amount'] as num?) ?? 0) *
+      (1 + ((r['interest_rate'] as num?) ?? 0) / 100)).roundToDouble();
     final outstanding = totalDue - paid > 0 ? totalDue - paid : 0;
-    return Card(child: ListTile(
-      title: Text('${_memberCode(r['membership_id'])} · ৳${_money(r['principal_amount'])}'),
-      subtitle: Text('${r['purpose']}\n${_branchName(r['branch_id'])} · ${r['term_months']} মাস · Flat ${r['interest_rate']}% · ${r['status']}\nপরিশোধ: ৳${_money(paid)} · বকেয়া: ৳${_money(outstanding)}'),
-      isThreeLine: true,
-      trailing: PopupMenuButton<String>(onSelected: (v) {
-        if (v == 'approved' || v == 'rejected') _reviewLoan(r, v);
-        if (v == 'disburse') _disburseLoan(r);
-        if (v == 'repay') _repayLoan(r);
-      }, itemBuilder: (_) => [
-        if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
-        if (_canReviewFinance && r['status'] == 'pending') const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
-        if (_canProcessLoanCash && r['status'] == 'approved') const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
-        if (_canProcessLoanCash && r['status'] == 'disbursed') const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
-      ]),
-    ));
+    final overdueCount = loanInstallments.where((item) =>
+      loanInstallmentState(
+        amount: (item['amount'] as num?) ?? 0,
+        paidAmount: (item['paid_amount'] as num?) ?? 0,
+        dueDate: DateTime.parse(item['due_date'].toString()),
+      ) == LoanInstallmentState.overdue
+    ).length;
+
+    return Card(
+      child: ExpansionTile(
+        title: Text('${_memberCode(r['membership_id'])} · ৳${_money(r['principal_amount'])}'),
+        subtitle: Text(
+          '${r['purpose']}\n${_branchName(r['branch_id'])} · ${r['term_months']} মাস · Flat ${r['interest_rate']}% · ${r['status']}\n'
+          'পরিশোধ: ৳${_money(paid)} · বকেয়া: ৳${_money(outstanding)}'
+          '${overdueCount > 0 ? ' · মেয়াদোত্তীর্ণ: $overdueCount' : ''}',
+        ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (v) {
+            if (v == 'approved' || v == 'rejected') _reviewLoan(r, v);
+            if (v == 'disburse') _disburseLoan(r);
+            if (v == 'repay') _repayLoan(r);
+            if (v == 'schedule') _initializeLoanSchedule(r);
+          },
+          itemBuilder: (_) => [
+            if (_canReviewFinance && r['status'] == 'pending')
+              const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
+            if (_canReviewFinance && r['status'] == 'pending')
+              const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
+            if (_canProcessLoanCash && r['status'] == 'approved')
+              const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
+            if (_canProcessLoanCash && r['status'] == 'disbursed' && loanInstallments.isEmpty)
+              const PopupMenuItem(value: 'schedule', child: Text('পুরোনো ঋণের Schedule তৈরি')),
+            if (_canProcessLoanCash && r['status'] == 'disbursed')
+              const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
+          ],
+        ),
+        children: [
+          if (loanInstallments.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                r['status'] == 'disbursed'
+                  ? (_canProcessLoanCash
+                    ? 'এই পুরোনো ঋণের installment schedule নেই। Menu থেকে প্রকৃত বিতরণের তারিখ দিয়ে schedule তৈরি করুন।'
+                    : 'এই ঋণের কিস্তির schedule এখনো তৈরি হয়নি। Finance team-এর সঙ্গে যোগাযোগ করুন।')
+                  : 'ঋণ বিতরণের পর installment schedule তৈরি হবে।',
+              ),
+            ),
+          for (final item in loanInstallments)
+            Builder(builder: (context) {
+              final amount = (item['amount'] as num?) ?? 0;
+              final paidAmount = (item['paid_amount'] as num?) ?? 0;
+              final state = loanInstallmentState(
+                amount: amount,
+                paidAmount: paidAmount,
+                dueDate: DateTime.parse(item['due_date'].toString()),
+              );
+              return ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 15,
+                  child: Text(item['installment_no'].toString()),
+                ),
+                title: Text('কিস্তি ${item['installment_no']} · ${_date(item['due_date'])}'),
+                subtitle: Text(
+                  'নির্ধারিত: ৳${_money(amount)} · পরিশোধ: ৳${_money(paidAmount)} · বাকি: ৳${_money(amount - paidAmount)}',
+                ),
+                trailing: Text(
+                  loanInstallmentStateLabel(state),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: state == LoanInstallmentState.overdue
+                      ? Colors.red
+                      : state == LoanInstallmentState.paid
+                        ? Colors.green
+                        : null,
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
   }
 
   Widget _loansView() => ListView(padding: const EdgeInsets.all(16), children: [
