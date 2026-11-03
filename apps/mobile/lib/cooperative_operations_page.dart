@@ -42,6 +42,7 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
   bool get _canFinance => const ['committee_admin', 'manager', 'treasurer', 'accountant', 'auditor'].contains(widget.role);
   bool get _canCreateVoucher => const ['committee_admin', 'manager', 'treasurer', 'accountant'].contains(widget.role);
   bool get _canProcessLoanCash => const ['committee_admin', 'manager', 'treasurer', 'accountant'].contains(widget.role);
+  bool get _canDisburseLoan => const ['committee_admin', 'manager', 'treasurer'].contains(widget.role);
   bool get _canManageMeetings => const ['committee_admin', 'manager', 'general_secretary', 'secretary'].contains(widget.role);
 
   @override
@@ -565,9 +566,9 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
               const PopupMenuItem(value: 'approved', child: Text('অনুমোদন')),
             if (_canReviewFinance && r['status'] == 'pending')
               const PopupMenuItem(value: 'rejected', child: Text('প্রত্যাখ্যান')),
-            if (_canProcessLoanCash && r['status'] == 'approved')
+            if (_canDisburseLoan && r['status'] == 'approved')
               const PopupMenuItem(value: 'disburse', child: Text('ঋণ বিতরণ')),
-            if (_canProcessLoanCash && r['status'] == 'disbursed' && loanInstallments.isEmpty)
+            if (_canDisburseLoan && r['status'] == 'disbursed' && loanInstallments.isEmpty)
               const PopupMenuItem(value: 'schedule', child: Text('পুরোনো ঋণের Schedule তৈরি')),
             if (_canProcessLoanCash && r['status'] == 'disbursed')
               const PopupMenuItem(value: 'repay', child: Text('কিস্তি গ্রহণ')),
