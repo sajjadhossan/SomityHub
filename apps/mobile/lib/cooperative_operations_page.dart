@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'loan_installment_status.dart';
 
 class CooperativeOperationsPage extends StatefulWidget {
   const CooperativeOperationsPage({
@@ -521,8 +522,8 @@ class _CooperativeOperationsPageState extends State<CooperativeOperationsPage>
       .toList();
     final paid = _repayments.where((p) => p['loan_id'].toString() == r['id'].toString())
       .fold<num>(0, (sum, p) => sum + ((p['amount'] as num?) ?? 0));
-    final totalDue = (((r['principal_amount'] as num?) ?? 0) *
-      (1 + ((r['interest_rate'] as num?) ?? 0) / 100)).roundToDouble();
+    final totalDue = ((((r['principal_amount'] as num?) ?? 0) *
+      (1 + ((r['interest_rate'] as num?) ?? 0) / 100)) * 100).round() / 100;
     final outstanding = totalDue - paid > 0 ? totalDue - paid : 0;
     final overdueCount = loanInstallments.where((item) =>
       loanInstallmentState(
