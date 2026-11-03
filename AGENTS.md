@@ -49,7 +49,7 @@ Only these two workflows are authorized for automatic Android work:
 ### Repository and active work
 - Repository: `sajjadhossan/SomityHub`
 - Active branch: `feature/android-cooperative-operations-1-8`
-- Verified branch HEAD at handover: `72ccdcfbfcf07deefaeae56709dece1d882491a8`
+- Verified branch HEAD at handover: `869e80f3045d594668a73fdd16b7168ff2cad285`
 - Open work: draft PR #15, Android loan installment schedules and overdue tracking.
 - Base branch: `main`
 - PR #15 is not merged. Do not merge without explicit approval.
@@ -67,7 +67,7 @@ Only these two workflows are authorized for automatic Android work:
 - Build targets: ARMv7 + ARM64 (one universal APK)
 - GitHub Release: https://github.com/sajjadhossan/SomityHub/releases/tag/android-preview-51
 - APK download: https://github.com/sajjadhossan/SomityHub/releases/download/android-preview-51/SomityHub-Android.apk
-- Android CI run #127 (run ID `41580883076`): success.
+- Android CI run #128 (run ID `41581846217`) on the current handover commit `869e80f3045d594668a73fdd16b7168ff2cad285`: success (Flutter analyze and tests).
 - No stable release was created from this preview. Existing stable release `v0.1.46` was not modified.
 - Owner has now explicitly authorized stable APK publishing and set the rule that every official Android version release must publish the single APK as a normal GitHub Release. The current preview remains a prerelease until a new version tag triggers the stable-release workflow.
 
