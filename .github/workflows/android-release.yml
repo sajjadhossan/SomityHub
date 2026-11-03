@@ -1,8 +1,13 @@
-name: Android APK Preview and Release
+name: Android App Preview and Release
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feature/android-cooperative-operations-1-8
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/android-release.yml"
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -17,7 +22,7 @@ permissions:
 
 concurrency:
   group: android-apk-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-apk:
@@ -257,26 +262,13 @@ jobs:
             exit 1
           }
 
-      - name: Build installable Android APKs
+      - name: Build one universal Android APK
         working-directory: apps/mobile
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          flutter build apk --release --split-per-abi \
-            --build-name="${{ steps.version.outputs.version }}" \
-            --build-number="${{ github.run_number }}" \
-            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
-            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-
-
-      - name: Build universal APK for stable download
-        working-directory: apps/mobile
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
-        run: |
-          flutter build apk --release \
+          flutter build apk --release --target-platform android-arm,android-arm64 \
             --build-name="${{ steps.version.outputs.version }}" \
             --build-number="${{ github.run_number }}" \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
@@ -287,7 +279,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          APK="build/app/outputs/flutter-apk/app-release.apk"
           test -f "$APK" || { echo "::error::ARM64 APK missing."; exit 1; }
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           APKSIGNER="$(find "$SDK_ROOT/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner 2>/dev/null | sort -V | tail -n 1)"
@@ -297,71 +289,22 @@ jobs:
           fi
           "$APKSIGNER" verify --verbose --print-certs "$APK"
 
-      - name: Prepare versioned and stable APK files
-        shell: bash
+      - name: Prepare the single release APK
         run: |
-          mkdir -p release-apks release-stable
-          for apk in apps/mobile/build/app/outputs/flutter-apk/*-release.apk; do
-            [ -f "$apk" ] || continue
-            filename="$(basename "$apk")"
-            if [[ "$filename" == "app-release.apk" ]]; then
-              continue
-            fi
-            abi="$(echo "$filename" | sed 's/^app-//; s/-release\.apk$//')"
-            versioned="SomityHub-${{ steps.version.outputs.version }}-$abi.apk"
-            cp "$apk" "release-apks/$versioned"
-            case "$abi" in
-              arm64-v8a) cp "$apk" release-stable/SomityHub-arm64-v8a.apk ;;
-              armeabi-v7a) cp "$apk" release-stable/SomityHub-armeabi-v7a.apk ;;
-              x86_64) cp "$apk" release-stable/SomityHub-x86_64.apk ;;
-              *) echo "::error::Unexpected APK ABI: $abi"; exit 1 ;;
-            esac
-          done
-          for apk in release-stable/SomityHub-arm64-v8a.apk release-stable/SomityHub-armeabi-v7a.apk release-stable/SomityHub-x86_64.apk; do
-            test -f "$apk" || { echo "::error::Expected ABI APK missing: $apk"; exit 1; }
-          done
-          UNIVERSAL="apps/mobile/build/app/outputs/flutter-apk/app-release.apk"
-          test -f "$UNIVERSAL" || {
-            echo "::error::Universal APK was not produced."
-            exit 1
-          }
-          cp "$UNIVERSAL" release-apks/SomityHub-latest.apk
-          cp "$UNIVERSAL" release-stable/SomityHub-latest.apk
-          ls -lh release-apks release-stable
+          mkdir -p release
+          APK="apps/mobile/build/app/outputs/flutter-apk/app-release.apk"
+          test -f "$APK" || { echo "::error::Universal APK missing."; exit 1; }
+          cp "$APK" release/SomityHub-Android.apk
+          ls -lh release/SomityHub-Android.apk
 
-      - name: Upload APKs for preview
-        uses: actions/upload-artifact@v4
-        with:
-          name: SomityHub-APK-preview-${{ steps.version.outputs.version }}-run-${{ github.run_number }}
-          path: release-apks/*.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Publish APKs directly to GitHub Releases
+      - name: Publish one APK directly to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('preview-build-{0}', github.run_number) }}
-          target_commitish: main
-          name: ${{ github.ref_type == 'tag' && format('SomityHub v{0}', steps.version.outputs.version) || format('SomityHub Preview Build {0}', github.run_number) }}
-          prerelease: ${{ github.ref_type != 'tag' }}
-          generate_release_notes: true
-          files: release-apks/*.apk
-
-      - name: Move stable latest tag to this commit
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f latest "$GITHUB_SHA"
-          git push origin refs/tags/latest --force
-
-      - name: Publish stable Latest APK
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('android-preview-{0}', github.run_number) }}
           target_commitish: ${{ github.sha }}
-          name: SomityHub v${{ steps.version.outputs.version }}
-          body: "Latest version: ${{ steps.version.outputs.version }}\\n\\nInstall this APK over the existing SomityHub app to update."
-          prerelease: false
-          make_latest: true
-          overwrite_files: true
-          files: release-stable/*.apk
+          name: ${{ github.ref_type == 'tag' && format('SomityHub v{0}', steps.version.outputs.version) || format('SomityHub Android Preview {0}', github.run_number) }}
+          body: "Universal Android APK (ARMv7 + ARM64). Download SomityHub-Android.apk and install on a compatible Android device."
+          prerelease: ${{ github.ref_type != 'tag' }}
+          make_latest: ${{ github.ref_type == 'tag' }}
+          generate_release_notes: true
+          files: release/SomityHub-Android.apk
