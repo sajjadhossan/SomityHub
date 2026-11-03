@@ -1,12 +1,7 @@
 name: Desktop App Preview and Release
 
 on:
-  push:
-    branches: ["**"]
-    tags:
-      - "v*.*.*"
-  pull_request:
-    branches: [main]
+  # Manual-only: Android-only changes must never start desktop builds.
   workflow_dispatch:
     inputs:
       version:
